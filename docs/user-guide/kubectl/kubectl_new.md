@@ -20,7 +20,7 @@ refer to the docs that go with that version.
 
 <strong>
 The latest 1.0.x release of this document can be found
-[here](http://releases.k8s.io/release-1.0/docs/user-guide/kubectl/kubectl.md).
+[here](http://releases.k8s.io/release-1.0/docs/user-guide/kubectl/kubectl_new.md).
 
 Documentation for other releases can be found at
 [releases.k8s.io](http://releases.k8s.io).
@@ -31,22 +31,63 @@ Documentation for other releases can be found at
 
 <!-- END MUNGE: UNVERSIONED_WARNING -->
 
-## kubectl
+## kubectl new
 
-kubectl controls the Kubernetes cluster manager
+Create a new object of the given type by filling in a template
 
 ### Synopsis
 
 
-kubectl controls the Kubernetes cluster manager.
+Create a new object of the given type using a template.
 
-Find more information at https://github.com/kubernetes/kubernetes.
+The new command pulls down an for the given object type, allows you
+to edit the filled in example, and then submits it for creation.  The
+editing functionality functions similarly to the 'edit' command -- you
+can control the editor used, as well as the format and version, using
+the same flags and environment variables.
+
+By default, before submission your new object will be validated.  If an
+invalid object is encountered, you will be returned to the editor with the
+invalid part indicated with comments.  Use the '--validate=false' in order
+to skip local validation.
+
+You can specify namespace, name, and labels (in 'key1=value1,key2=value2' form)
+from the command line using the '--namespace', '--name', and '--labels' flags.
+
+You can use the '--dry-run' flag to just output the example to standard out
+without launching an editor or submitting the object for creation.
+
 
 ```
-kubectl
+kubectl new TYPE [--name NAME] [--labels key1=val,key2=val]
+```
+
+### Examples
+
+```
+# Create a new pod named 'website':
+  $ kubectl create pod --name website --labels end=front,app=site
+
+  # Don't validate the object before creation
+  $ kubectl create namespace --validate=false --name my-ns
+
+  # Don't edit or create a new object -- just output the example
+  $ kubectl create namespace --name my-ns --dry-run
 ```
 
 ### Options
+
+```
+      --dry-run[=false]: If true, only print the example object, without editing or creating it.
+      --labels="": A comma-separated list of labels in key=value form to apply to the created object
+      --name="": The name of the new object
+  -o, --output="yaml": Output format. One of: 'yaml' or 'json'.
+      --output-version="": Output the formatted object with the given version (default api-version).
+      --schema-cache-dir="/tmp/kubectl.schema": If non-empty, load/store cached API schemas in this directory, default is '/tmp/kubectl.schema'
+      --validate[=true]: If true, use a schema to validate the input before sending it
+```
+
+### Options inherited from parent commands
 
 ```
       --alsologtostderr[=false]: log to standard error as well as files
@@ -76,35 +117,10 @@ kubectl
 
 ### SEE ALSO
 
-* [kubectl annotate](kubectl_annotate.md)	 - Update the annotations on a resource
-* [kubectl api-versions](kubectl_api-versions.md)	 - Print available API versions.
-* [kubectl attach](kubectl_attach.md)	 - Attach to a running container.
-* [kubectl cluster-info](kubectl_cluster-info.md)	 - Display cluster info
-* [kubectl config](kubectl_config.md)	 - config modifies kubeconfig files
-* [kubectl create](kubectl_create.md)	 - Create a resource by filename or stdin
-* [kubectl delete](kubectl_delete.md)	 - Delete resources by filenames, stdin, resources and names, or by resources and label selector.
-* [kubectl describe](kubectl_describe.md)	 - Show details of a specific resource or group of resources
-* [kubectl edit](kubectl_edit.md)	 - Edit a resource on the server
-* [kubectl exec](kubectl_exec.md)	 - Execute a command in a container.
-* [kubectl explain](kubectl_explain.md)	 - Documentation of resources.
-* [kubectl expose](kubectl_expose.md)	 - Take a replication controller, service or pod and expose it as a new Kubernetes Service
-* [kubectl get](kubectl_get.md)	 - Display one or many resources
-* [kubectl label](kubectl_label.md)	 - Update the labels on a resource
-* [kubectl logs](kubectl_logs.md)	 - Print the logs for a container in a pod.
-* [kubectl namespace](kubectl_namespace.md)	 - SUPERSEDED: Set and view the current Kubernetes namespace
-* [kubectl new](kubectl_new.md)	 - Create a new object of the given type by filling in a template
-* [kubectl patch](kubectl_patch.md)	 - Update field(s) of a resource by stdin.
-* [kubectl port-forward](kubectl_port-forward.md)	 - Forward one or more local ports to a pod.
-* [kubectl proxy](kubectl_proxy.md)	 - Run a proxy to the Kubernetes API server
-* [kubectl replace](kubectl_replace.md)	 - Replace a resource by filename or stdin.
-* [kubectl rolling-update](kubectl_rolling-update.md)	 - Perform a rolling update of the given ReplicationController.
-* [kubectl run](kubectl_run.md)	 - Run a particular image on the cluster.
-* [kubectl scale](kubectl_scale.md)	 - Set a new size for a Replication Controller.
-* [kubectl stop](kubectl_stop.md)	 - Deprecated: Gracefully shut down a resource by name or filename.
-* [kubectl version](kubectl_version.md)	 - Print the client and server version information.
+* [kubectl](kubectl.md)	 - kubectl controls the Kubernetes cluster manager
 
-###### Auto generated by spf13/cobra at 2015-09-22 11:13:47.6353025 +0000 UTC
+###### Auto generated by spf13/cobra at 2015-09-21 18:58:21.241433667 +0000 UTC
 
 <!-- BEGIN MUNGE: GENERATED_ANALYTICS -->
-[![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/docs/user-guide/kubectl/kubectl.md?pixel)]()
+[![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/docs/user-guide/kubectl/kubectl_new.md?pixel)]()
 <!-- END MUNGE: GENERATED_ANALYTICS -->
