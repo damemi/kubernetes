@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "go_default_library",
     srcs = ["provider.go"],
-    importpath = "k8s.io/kubernetes/test/images/custom-metrics-adapter/pkg/provider",
+    importpath = "k8s.io/kubernetes/test/images/custom-metrics-adapter/provider",
     visibility = ["//visibility:public"],
     deps = [
         "//vendor/github.com/emicklei/go-restful:go_default_library",

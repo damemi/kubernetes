@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "go_default_library",
     srcs = ["start.go"],
-    importpath = "k8s.io/kubernetes/test/images/custom-metrics-adapter/cmd/adapter/app",
+    importpath = "k8s.io/kubernetes/test/images/custom-metrics-adapter/app",
     visibility = ["//visibility:public"],
     deps = [
         "//vendor/github.com/damemi/k8s-e2e-adapter/pkg/provider:go_default_library",
