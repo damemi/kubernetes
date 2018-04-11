@@ -22,10 +22,10 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/damemi/k8s-e2e-adapter/cmd/adapter/app"
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apiserver/pkg/util/logs"
+	"k8s.io/kubernetes/test/images/custom-metrics-adapter/app"
 )
 
 func main() {

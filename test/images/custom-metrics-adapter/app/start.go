@@ -29,9 +29,9 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/damemi/k8s-e2e-adapter/pkg/provider"
 	"github.com/kubernetes-incubator/custom-metrics-apiserver/pkg/cmd/server"
 	"github.com/kubernetes-incubator/custom-metrics-apiserver/pkg/dynamicmapper"
+	"k8s.io/kubernetes/test/images/custom-metrics-adapter/provider"
 )
 
 // NewCommandStartE2EAdapterServer provides a CLI handler for 'start master' command

@@ -6,7 +6,7 @@ go_library(
     importpath = "k8s.io/kubernetes/test/images/custom-metrics-adapter/app",
     visibility = ["//visibility:public"],
     deps = [
-        "//vendor/github.com/damemi/k8s-e2e-adapter/pkg/provider:go_default_library",
+        "//test/images/custom-metrics-adapter/provider:go_default_library",
         "//vendor/github.com/emicklei/go-restful:go_default_library",
         "//vendor/github.com/kubernetes-incubator/custom-metrics-apiserver/pkg/cmd/server:go_default_library",
         "//vendor/github.com/kubernetes-incubator/custom-metrics-apiserver/pkg/dynamicmapper:go_default_library",

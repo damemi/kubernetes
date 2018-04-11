@@ -6,7 +6,7 @@ go_library(
     importpath = "k8s.io/kubernetes/test/images/custom-metrics-adapter",
     visibility = ["//visibility:private"],
     deps = [
-        "//vendor/github.com/damemi/k8s-e2e-adapter/cmd/adapter/app:go_default_library",
+        "//test/images/custom-metrics-adapter/app:go_default_library",
         "//vendor/github.com/golang/glog:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/util/wait:go_default_library",
         "//vendor/k8s.io/apiserver/pkg/util/logs:go_default_library",

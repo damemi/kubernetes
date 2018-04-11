@@ -4,7 +4,16 @@ Forked from https://github.com/kubernetes-incubator/custom-metrics-apiserver
 
 ## Running:
 
-(See [directxman12/k8s-prometheus-adapter](https://github.com/DirectXMan12/k8s-prometheus-adapter/tree/master/deploy#example-deployment) for initial setup steps 1-4)
+1. Make sure you've built the included Dockerfile with `make docker-build`.
+   
+2. *(Optional, if modifying deployment to run securely):*
+   Create a secret called `cm-adapter-serving-certs` with two values:
+   `serving.crt` and `serving.key`. For more information on how to
+   generate these certificates, see the [auth concepts
+   documentation](https://github.com/kubernetes-incubator/apiserver-builder/blob/master/docs/concepts/auth.md)
+   in the apiserver-builder repository.
+
+4. `kubectl create -f k8s-e2e-adapter.yaml`
 
 5. Submit a POST request to one of the following endpoints:
 
