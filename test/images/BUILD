@@ -12,6 +12,8 @@ filegroup(
     srcs = [
         ":package-srcs",
         "//test/images/clusterapi-tester:all-srcs",
+        "//test/images/custom-metrics-adapter/cmd/adapter:all-srcs",
+        "//test/images/custom-metrics-adapter/pkg/provider:all-srcs",
         "//test/images/entrypoint-tester:all-srcs",
         "//test/images/fakegitserver:all-srcs",
         "//test/images/goproxy:all-srcs",
