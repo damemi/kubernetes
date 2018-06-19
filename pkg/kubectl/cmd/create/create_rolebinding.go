@@ -17,6 +17,7 @@ limitations under the License.
 package create
 
 import (
+	"fmt"
 	"github.com/spf13/cobra"
 
 	"k8s.io/kubernetes/pkg/kubectl"
@@ -67,6 +68,7 @@ func NewCmdCreateRoleBinding(f cmdutil.Factory, ioStreams genericclioptions.IOSt
 	cmd.Flags().StringArray("user", []string{}, "Usernames to bind to the role")
 	cmd.Flags().StringArray("group", []string{}, "Groups to bind to the role")
 	cmd.Flags().StringArray("serviceaccount", []string{}, "Service accounts to bind to the role, in the format <namespace>:<name>")
+	cmd.Flags().StringArray("sa", []string{}, "Shorthand alias for --serviceaccount")
 	return cmd
 }
 
@@ -75,6 +77,12 @@ func (o *RoleBindingOpts) Complete(f cmdutil.Factory, cmd *cobra.Command, args [
 	if err != nil {
 		return err
 	}
+
+	serviceAccount, sa := cmdutil.GetFlagStringArray(cmd, "serviceaccount"), cmdutil.GetFlagStringArray(cmd, "sa")
+	if len(serviceAccount) > 0 && len(sa) > 0 {
+		return fmt.Errorf("cannot specify both --sa and --serviceaccount")
+	}
+	serviceAccounts := append(serviceAccount, sa...)
 
 	var generator kubectl.StructuredGenerator
 	switch generatorName := cmdutil.GetFlagString(cmd, "generator"); generatorName {
@@ -85,7 +93,7 @@ func (o *RoleBindingOpts) Complete(f cmdutil.Factory, cmd *cobra.Command, args [
 			Role:            cmdutil.GetFlagString(cmd, "role"),
 			Users:           cmdutil.GetFlagStringArray(cmd, "user"),
 			Groups:          cmdutil.GetFlagStringArray(cmd, "group"),
-			ServiceAccounts: cmdutil.GetFlagStringArray(cmd, "serviceaccount"),
+			ServiceAccounts: serviceAccounts,
 		}
 	default:
 		return errUnsupportedGenerator(cmd, generatorName)
