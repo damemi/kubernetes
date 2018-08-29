@@ -25,22 +25,29 @@ import (
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/flowcontrol"
+
+	cmint "k8s.io/metrics/pkg/apis/custom_metrics"
+	"k8s.io/metrics/pkg/apis/custom_metrics/v1beta1"
 	"k8s.io/metrics/pkg/apis/custom_metrics/v1beta2"
 	"k8s.io/metrics/pkg/client/custom_metrics/scheme"
 )
 
+var codecs = serializer.NewCodecFactory(scheme.Scheme)
+
 type customMetricsClient struct {
-	client rest.Interface
-	mapper meta.RESTMapper
+	client    rest.Interface
+	mapper    meta.RESTMapper
+	converter *MetricConverter
 }
 
-func New(client rest.Interface) CustomMetricsClient {
+func New(client rest.Interface, converter *MetricConverter) CustomMetricsClient {
 	return &customMetricsClient{
-		client: client,
+		client:    client,
+		converter: converter,
 	}
 }
 
-func NewForConfig(c *rest.Config) (CustomMetricsClient, error) {
+func NewForConfig(c *rest.Config, apiVers AvailableMetricsAPIFunc) (CustomMetricsClient, error) {
 	configShallowCopy := *c
 	if configShallowCopy.RateLimiter == nil && configShallowCopy.QPS > 0 {
 		configShallowCopy.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(configShallowCopy.QPS, configShallowCopy.Burst)
@@ -49,7 +56,7 @@ func NewForConfig(c *rest.Config) (CustomMetricsClient, error) {
 	if configShallowCopy.UserAgent == "" {
 		configShallowCopy.UserAgent = rest.DefaultKubernetesUserAgent()
 	}
-	configShallowCopy.GroupVersion = &v1beta2.SchemeGroupVersion
+	configShallowCopy.GroupVersion = &v1beta1.SchemeGroupVersion
 	configShallowCopy.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: scheme.Codecs}
 
 	client, err := rest.RESTClientFor(&configShallowCopy)
@@ -57,11 +64,11 @@ func NewForConfig(c *rest.Config) (CustomMetricsClient, error) {
 		return nil, err
 	}
 
-	return New(client), nil
+	return New(client, NewMetricConverter(apiVers)), nil
 }
 
-func NewForConfigOrDie(c *rest.Config) CustomMetricsClient {
-	client, err := NewForConfig(c)
+func NewForConfigOrDie(c *rest.Config, apiVers AvailableMetricsAPIFunc) CustomMetricsClient {
+	client, err := NewForConfig(c, apiVers)
 	if err != nil {
 		panic(err)
 	}
@@ -112,21 +119,26 @@ type rootScopedMetrics struct {
 }
 
 func (m *rootScopedMetrics) getForNamespace(namespace string, metricName string, metricSelector labels.Selector) (*v1beta2.MetricValue, error) {
-	res := &v1beta2.MetricValueList{}
-	err := m.client.client.Get().
-		Resource("metrics").
-		Namespace(namespace).
-		Name(metricName).
-		VersionedParams(&v1beta2.MetricListOptions{
-			MetricLabelSelector: metricSelector.String(),
-		}, scheme.ParameterCodec).
-		Do().
-		Into(res)
-
+	params, err := m.client.converter.ConvertListOptionsToPreferredVersion(&cmint.MetricListOptions{
+		MetricLabelSelector: metricSelector.String(),
+	})
 	if err != nil {
 		return nil, err
 	}
 
+	result := m.client.client.Get().
+		Resource("metrics").
+		Namespace(namespace).
+		Name(metricName).
+		VersionedParams(params, scheme.ParameterCodec).
+		Do()
+
+	metricObj, err := m.client.converter.ConvertResultToVersion(result, v1beta2.SchemeGroupVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	res := metricObj.(*v1beta2.MetricValueList)
 	if len(res.Items) != 1 {
 		return nil, fmt.Errorf("the custom metrics API server returned %v results when we asked for exactly one", len(res.Items))
 	}
@@ -145,21 +157,26 @@ func (m *rootScopedMetrics) GetForObject(groupKind schema.GroupKind, name string
 		return nil, err
 	}
 
-	res := &v1beta2.MetricValueList{}
-	err = m.client.client.Get().
-		Resource(resourceName).
-		Name(name).
-		SubResource(metricName).
-		VersionedParams(&v1beta2.MetricListOptions{
-			MetricLabelSelector: metricSelector.String(),
-		}, scheme.ParameterCodec).
-		Do().
-		Into(res)
-
+	params, err := m.client.converter.ConvertListOptionsToPreferredVersion(&cmint.MetricListOptions{
+		MetricLabelSelector: metricSelector.String(),
+	})
 	if err != nil {
 		return nil, err
 	}
 
+	result := m.client.client.Get().
+		Resource(resourceName).
+		Name(name).
+		SubResource(metricName).
+		VersionedParams(params, scheme.ParameterCodec).
+		Do()
+
+	metricObj, err := m.client.converter.ConvertResultToVersion(result, v1beta2.SchemeGroupVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	res := metricObj.(*v1beta2.MetricValueList)
 	if len(res.Items) != 1 {
 		return nil, fmt.Errorf("the custom metrics API server returned %v results when we asked for exactly one", len(res.Items))
 	}
@@ -178,22 +195,27 @@ func (m *rootScopedMetrics) GetForObjects(groupKind schema.GroupKind, selector l
 		return nil, err
 	}
 
-	res := &v1beta2.MetricValueList{}
-	err = m.client.client.Get().
-		Resource(resourceName).
-		Name(v1beta2.AllObjects).
-		SubResource(metricName).
-		VersionedParams(&v1beta2.MetricListOptions{
-			LabelSelector:       selector.String(),
-			MetricLabelSelector: metricSelector.String(),
-		}, scheme.ParameterCodec).
-		Do().
-		Into(res)
-
+	params, err := m.client.converter.ConvertListOptionsToPreferredVersion(&cmint.MetricListOptions{
+		LabelSelector:       selector.String(),
+		MetricLabelSelector: metricSelector.String(),
+	})
 	if err != nil {
 		return nil, err
 	}
 
+	result := m.client.client.Get().
+		Resource(resourceName).
+		Name(v1beta1.AllObjects).
+		SubResource(metricName).
+		VersionedParams(params, scheme.ParameterCodec).
+		Do()
+
+	metricObj, err := m.client.converter.ConvertResultToVersion(result, v1beta2.SchemeGroupVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	res := metricObj.(*v1beta2.MetricValueList)
 	return res, nil
 }
 
@@ -208,22 +230,27 @@ func (m *namespacedMetrics) GetForObject(groupKind schema.GroupKind, name string
 		return nil, err
 	}
 
-	res := &v1beta2.MetricValueList{}
-	err = m.client.client.Get().
-		Resource(resourceName).
-		Namespace(m.namespace).
-		Name(name).
-		SubResource(metricName).
-		VersionedParams(&v1beta2.MetricListOptions{
-			MetricLabelSelector: metricSelector.String(),
-		}, scheme.ParameterCodec).
-		Do().
-		Into(res)
-
+	params, err := m.client.converter.ConvertListOptionsToPreferredVersion(&cmint.MetricListOptions{
+		MetricLabelSelector: metricSelector.String(),
+	})
 	if err != nil {
 		return nil, err
 	}
 
+	result := m.client.client.Get().
+		Resource(resourceName).
+		Namespace(m.namespace).
+		Name(name).
+		SubResource(metricName).
+		VersionedParams(params, scheme.ParameterCodec).
+		Do()
+
+	metricObj, err := m.client.converter.ConvertResultToVersion(result, v1beta2.SchemeGroupVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	res := metricObj.(*v1beta2.MetricValueList)
 	if len(res.Items) != 1 {
 		return nil, fmt.Errorf("the custom metrics API server returned %v results when we asked for exactly one", len(res.Items))
 	}
@@ -237,22 +264,27 @@ func (m *namespacedMetrics) GetForObjects(groupKind schema.GroupKind, selector l
 		return nil, err
 	}
 
-	res := &v1beta2.MetricValueList{}
-	err = m.client.client.Get().
-		Resource(resourceName).
-		Namespace(m.namespace).
-		Name(v1beta2.AllObjects).
-		SubResource(metricName).
-		VersionedParams(&v1beta2.MetricListOptions{
-			LabelSelector:       selector.String(),
-			MetricLabelSelector: metricSelector.String(),
-		}, scheme.ParameterCodec).
-		Do().
-		Into(res)
-
+	params, err := m.client.converter.ConvertListOptionsToPreferredVersion(&cmint.MetricListOptions{
+		LabelSelector:       selector.String(),
+		MetricLabelSelector: metricSelector.String(),
+	})
 	if err != nil {
 		return nil, err
 	}
 
+	result := m.client.client.Get().
+		Resource(resourceName).
+		Namespace(m.namespace).
+		Name(v1beta1.AllObjects).
+		SubResource(metricName).
+		VersionedParams(params, scheme.ParameterCodec).
+		Do()
+
+	metricObj, err := m.client.converter.ConvertResultToVersion(result, v1beta2.SchemeGroupVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	res := metricObj.(*v1beta2.MetricValueList)
 	return res, nil
 }

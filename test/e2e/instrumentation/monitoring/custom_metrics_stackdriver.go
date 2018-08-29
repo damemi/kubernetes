@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/discovery"
+	discocache "k8s.io/client-go/discovery/cached"
 	"k8s.io/kubernetes/test/e2e/framework"
 	customclient "k8s.io/metrics/pkg/client/custom_metrics"
 	externalclient "k8s.io/metrics/pkg/client/external_metrics"
@@ -57,8 +58,10 @@ var _ = instrumentation.SIGDescribe("Stackdriver Monitoring", func() {
 		if err != nil {
 			framework.Failf("Failed to load config: %s", err)
 		}
-		customMetricsClient := customclient.NewForConfigOrDie(config)
 		discoveryClient := discovery.NewDiscoveryClientForConfigOrDie(config)
+		cachedDiscoClient := discocache.NewMemCacheClient(discoveryClient)
+		apiVersionsFromDiscovery := customclient.APIVersionsFromDiscovery{CachedDiscoveryInterface: cachedDiscoClient}
+		customMetricsClient := customclient.NewForConfigOrDie(config, apiVersionsFromDiscovery.Versions)
 		testCustomMetrics(f, kubeClient, customMetricsClient, discoveryClient, AdapterForOldResourceModel)
 	})
 
@@ -68,8 +71,10 @@ var _ = instrumentation.SIGDescribe("Stackdriver Monitoring", func() {
 		if err != nil {
 			framework.Failf("Failed to load config: %s", err)
 		}
-		customMetricsClient := customclient.NewForConfigOrDie(config)
 		discoveryClient := discovery.NewDiscoveryClientForConfigOrDie(config)
+		cachedDiscoClient := discocache.NewMemCacheClient(discoveryClient)
+		apiVersionsFromDiscovery := customclient.APIVersionsFromDiscovery{CachedDiscoveryInterface: cachedDiscoClient}
+		customMetricsClient := customclient.NewForConfigOrDie(config, apiVersionsFromDiscovery.Versions)
 		testCustomMetrics(f, kubeClient, customMetricsClient, discoveryClient, AdapterForNewResourceModel)
 	})
 

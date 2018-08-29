@@ -24,10 +24,12 @@ import (
 	"net/http"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	discocache "k8s.io/client-go/discovery/cached"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/scale"
 	"k8s.io/kubernetes/pkg/controller/podautoscaler"
 	"k8s.io/kubernetes/pkg/controller/podautoscaler/metrics"
+
 	resourceclient "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 	"k8s.io/metrics/pkg/client/custom_metrics"
 	"k8s.io/metrics/pkg/client/external_metrics"
@@ -48,9 +50,12 @@ func startHPAController(ctx ControllerContext) (http.Handler, bool, error) {
 
 func startHPAControllerWithRESTClient(ctx ControllerContext) (http.Handler, bool, error) {
 	clientConfig := ctx.ClientBuilder.ConfigOrDie("horizontal-pod-autoscaler")
+	hpaClient := ctx.ClientBuilder.ClientOrDie("horizontal-pod-autoscaler")
+	cachedDiscoClient := discocache.NewMemCacheClient(hpaClient.Discovery())
+	apiVersionsFromDiscovery := custom_metrics.APIVersionsFromDiscovery{CachedDiscoveryInterface: cachedDiscoClient}
 	metricsClient := metrics.NewRESTMetricsClient(
 		resourceclient.NewForConfigOrDie(clientConfig),
-		custom_metrics.NewForConfigOrDie(clientConfig),
+		custom_metrics.NewForConfigOrDie(clientConfig, apiVersionsFromDiscovery.Versions),
 		external_metrics.NewForConfigOrDie(clientConfig),
 	)
 	return startHPAControllerWithMetricsClient(ctx, metricsClient)
