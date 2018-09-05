@@ -19,12 +19,9 @@ package custom_metrics
 import (
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/discovery/cached"
 	"k8s.io/client-go/rest"
 
 	cmint "k8s.io/metrics/pkg/apis/custom_metrics"
@@ -36,87 +33,24 @@ import (
 var (
 	// MetricVersions is the set of metric versions accepted by the converter.
 	MetricVersions = []schema.GroupVersion{
+		// first version is preferred for fallback purposes
 		cmv1beta2.SchemeGroupVersion,
 		cmv1beta1.SchemeGroupVersion,
 		cmint.SchemeGroupVersion,
 	}
-
-	// metricVersionsToGV is the map of string group-versions
-	// accepted by the converter to group-version objects (so
-	// we don't have to re-parse)
-	metricVersionsToGV map[string]schema.GroupVersion
 )
-
-func init() {
-	metricVersionsToGV = make(map[string]schema.GroupVersion)
-	for _, ver := range MetricVersions {
-		metricVersionsToGV[ver.String()] = ver
-	}
-}
-
-type AvailableMetricsAPIFunc func() (*metav1.APIGroup, error)
-
-type APIVersionsFromDiscovery struct {
-	discovery.CachedDiscoveryInterface
-}
-
-// maybeFetchVersions fetches the versions, but doesn't try to invalidate on cache misses.
-// Explicitly returns false if a cache miss occurred (i.e. our cached discovery info doesn't
-// have the metrics API registered).
-func (d APIVersionsFromDiscovery) maybeFetchVersions() (*metav1.APIGroup, bool, error) {
-	groups, err := d.CachedDiscoveryInterface.ServerGroups()
-	if err != nil {
-		return nil, false, err
-	}
-
-	// Determine the preferred version on the server by first finding the custom metrics group
-	var apiGroup *metav1.APIGroup
-	for _, group := range groups.Groups {
-		if group.Name == cmint.GroupName {
-			apiGroup = &group
-			break
-		}
-	}
-
-	if apiGroup == nil {
-		return nil, false, nil
-	}
-
-	return apiGroup, true, nil
-}
-
-func (d APIVersionsFromDiscovery) Versions() (*metav1.APIGroup, error) {
-	// check our cached version
-	group, present, err := d.maybeFetchVersions()
-	if (err == nil && !present) || err == cached.ErrCacheEmpty {
-		// we missed, so invalidate to fetch the latest info, and fetch again
-		d.Invalidate()
-		group, present, err = d.maybeFetchVersions()
-	}
-	if err != nil {
-		return nil, err
-	}
-	if !present {
-		// it wasn't in the latest info, so actually bail with an error
-		return nil, fmt.Errorf("no metrics API group registered")
-	}
-
-	return group, nil
-}
 
 // MetricConverter knows how to convert between external MetricValue versions.
 type MetricConverter struct {
 	scheme            *runtime.Scheme
 	codecs            serializer.CodecFactory
 	internalVersioner runtime.GroupVersioner
-	metricsVersions   AvailableMetricsAPIFunc
 }
 
-func NewMetricConverter(apiVersions AvailableMetricsAPIFunc) *MetricConverter {
+func NewMetricConverter() *MetricConverter {
 	return &MetricConverter{
-		scheme:          scheme.Scheme,
-		codecs:          serializer.NewCodecFactory(scheme.Scheme),
-		metricsVersions: apiVersions,
+		scheme: scheme.Scheme,
+		codecs: serializer.NewCodecFactory(scheme.Scheme),
 		internalVersioner: runtime.NewMultiGroupVersioner(
 			scheme.SchemeGroupVersion,
 			schema.GroupKind{Group: cmint.GroupName, Kind: ""},
@@ -135,37 +69,8 @@ func (c *MetricConverter) Codecs() serializer.CodecFactory {
 	return c.codecs
 }
 
-func (c *MetricConverter) negotiatePreferredVersion(apiGroup *metav1.APIGroup) (*schema.GroupVersion, error) {
-	// Check if a preferred version is set in the APIGroup
-	// If not, we need to compare all of the available versions to ours to find a match.
-	var preferredVersion *schema.GroupVersion
-	if gv, present := metricVersionsToGV[apiGroup.PreferredVersion.GroupVersion]; present && len(apiGroup.PreferredVersion.GroupVersion) != 0 {
-		preferredVersion = &gv
-	} else {
-		for _, version := range apiGroup.Versions {
-			if gv, present := metricVersionsToGV[version.GroupVersion]; present {
-				preferredVersion = &gv
-				break
-			}
-		}
-	}
-
-	if preferredVersion == nil {
-		return nil, fmt.Errorf("no known available metric versions found")
-	}
-	return preferredVersion, nil
-}
-
-func (c *MetricConverter) ConvertListOptionsToPreferredVersion(opts *cmint.MetricListOptions) (runtime.Object, error) {
-	apiGroup, err := c.metricsVersions()
-	if err != nil {
-		return nil, err
-	}
-	preferredVersion, err := c.negotiatePreferredVersion(apiGroup)
-	if err != nil {
-		return nil, err
-	}
-	paramObj, err := c.UnsafeConvertToVersionVia(opts, *preferredVersion)
+func (c *MetricConverter) ConvertListOptionsToVersion(opts *cmint.MetricListOptions, version schema.GroupVersion) (runtime.Object, error) {
+	paramObj, err := c.UnsafeConvertToVersionVia(opts, version)
 	if err != nil {
 		return nil, err
 	}
