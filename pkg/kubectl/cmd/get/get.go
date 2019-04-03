@@ -615,6 +615,27 @@ func (o *GetOptions) watch(f cmdutil.Factory, cmd *cobra.Command, args []string)
 		ResourceTypeOrNameArgs(true, args...).
 		SingleResourceType().
 		Latest().
+		Flatten().
+		TransformRequests(func(req *rest.Request) {
+			// We need full objects if printing with openapi columns
+			if o.PrintWithOpenAPICols {
+				return
+			}
+			if !o.ServerPrint || !o.IsHumanReadablePrinter {
+				return
+			}
+
+			group := metav1beta1.GroupName
+			version := metav1beta1.SchemeGroupVersion.Version
+
+			tableParam := fmt.Sprintf("application/json;as=Table;v=%s;g=%s, application/json", version, group)
+			req.SetHeader("Accept", tableParam)
+
+			// if sorting, ensure we receive the full object in order to introspect its fields via jsonpath
+			if o.Sort {
+				req.Param("includeObject", "Object")
+			}
+		}).
 		Do()
 	if err := r.Err(); err != nil {
 		return err
@@ -664,6 +685,18 @@ func (o *GetOptions) watch(f cmdutil.Factory, cmd *cobra.Command, args []string)
 		} else {
 			objsToPrint = append(objsToPrint, obj)
 		}
+
+		for ix := range objsToPrint {
+			table, err := o.decodeIntoTable(objsToPrint[ix])
+			if err == nil {
+				objsToPrint[ix] = table
+			} else {
+				// if we are unable to decode server response into a v1beta1.Table,
+				// fallback to client-side printing with whatever info the server returned.
+				klog.V(2).Infof("Unable to decode server response into a Table. Falling back to hardcoded types: %v", err)
+			}
+		}
+
 		for _, objToPrint := range objsToPrint {
 			if o.IsHumanReadablePrinter {
 				// printing always takes the internal version, but the watch event uses externals
