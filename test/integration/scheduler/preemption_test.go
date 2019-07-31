@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	"k8s.io/kubernetes/pkg/apis/scheduling"
 	_ "k8s.io/kubernetes/pkg/scheduler/algorithmprovider"
 	testutils "k8s.io/kubernetes/test/utils"
 
@@ -364,6 +365,54 @@ func TestDisablePreemption(t *testing.T) {
 		pods = append(pods, preemptor)
 		cleanupPods(cs, t, pods)
 	}
+}
+
+func TestPodPriorityResolution(t *testing.T) {
+	context := initTest(t, "podPriorityResolution")
+	defer cleanupTest(t, context)
+	cs := context.clientSet
+
+	tests := []struct {
+		PriorityClass    string
+		Pod              *v1.Pod
+		ExpectedPriority int32
+	}{
+		{
+			PriorityClass:    scheduling.SystemNodeCritical,
+			ExpectedPriority: scheduling.SystemCriticalPriority + 1000,
+			Pod: initPausePod(cs, &pausePodConfig{
+				Name:              fmt.Sprintf("pod1-%v", scheduling.SystemNodeCritical),
+				Namespace:         metav1.NamespaceSystem,
+				PriorityClassName: scheduling.SystemNodeCritical,
+			}),
+		},
+		{
+			PriorityClass:    scheduling.SystemClusterCritical,
+			ExpectedPriority: scheduling.SystemCriticalPriority,
+			Pod: initPausePod(cs, &pausePodConfig{
+				Name:              fmt.Sprintf("pod2-%v", scheduling.SystemClusterCritical),
+				Namespace:         metav1.NamespaceSystem,
+				PriorityClassName: scheduling.SystemClusterCritical,
+			}),
+		},
+	}
+
+	pods := make([]*v1.Pod, len(tests))
+	for i, test := range tests {
+		pod, err := runPausePod(cs, test.Pod)
+		if err != nil {
+			t.Fatalf("Test [PodPriority/%v]: Error running pause pod: %v", test.PriorityClass, err)
+		}
+		pods[i] = pod
+		if pods[i].Spec.Priority != nil {
+			if *pods[i].Spec.Priority != test.ExpectedPriority {
+				t.Errorf("Expected pod %v to have priority %v but was %v", pods[i].Name, test.ExpectedPriority, pods[i].Spec.Priority)
+			}
+		} else {
+			t.Errorf("Expected pod %v to have priority %v but was nil", pods[i].Name, test.PriorityClass)
+		}
+	}
+	cleanupPods(cs, t, pods)
 }
 
 func mkPriorityPodWithGrace(tc *testContext, name string, priority int32, grace int64) *v1.Pod {
