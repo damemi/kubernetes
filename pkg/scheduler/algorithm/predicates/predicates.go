@@ -1486,7 +1486,9 @@ func (c *PodAffinityChecker) satisfiesPodsAffinityAntiAffinity(pod *v1.Pod,
 	if node == nil {
 		return ErrPodAffinityRulesNotMatch, fmt.Errorf("node not found")
 	}
+	fmt.Printf("Checking pod affinity for pod %+v\n\n", pod)
 	if predicateMeta, ok := meta.(*predicateMetadata); ok {
+		fmt.Printf("We have predicatemetadata for pod %+v\n\n", pod)
 		// Check all affinity terms.
 		topologyPairsPotentialAffinityPods := predicateMeta.podAffinityMetadata.topologyPairsPotentialAffinityPods
 		if affinityTerms := GetPodAffinityTerms(affinity.PodAffinity); len(affinityTerms) > 0 {
@@ -1497,6 +1499,7 @@ func (c *PodAffinityChecker) satisfiesPodsAffinityAntiAffinity(pod *v1.Pod,
 				// in the cluster matches the namespace and selector of this pod and the pod matches
 				// its own terms, then we allow the pod to pass the affinity check.
 				if !(len(topologyPairsPotentialAffinityPods.topologyPairToPods) == 0 && targetPodMatchesAffinityOfPod(pod, pod)) {
+					fmt.Printf("Cannot schedule pod %+v\n\n", pod)
 					klog.V(10).Infof("Cannot schedule pod %+v onto node %v, because of PodAffinity",
 						podName(pod), node.Name)
 					return ErrPodAffinityRulesNotMatch, nil
@@ -1515,6 +1518,7 @@ func (c *PodAffinityChecker) satisfiesPodsAffinityAntiAffinity(pod *v1.Pod,
 			}
 		}
 	} else { // We don't have precomputed metadata. We have to follow a slow path to check affinity terms.
+	fmt.Printf("We don't have predicate metadata for pod %+v\n\n",pod)
 		filteredPods, err := c.podLister.FilteredList(nodeInfo.Filter, labels.Everything())
 		if err != nil {
 			return ErrPodAffinityRulesNotMatch, err
@@ -1527,6 +1531,7 @@ func (c *PodAffinityChecker) satisfiesPodsAffinityAntiAffinity(pod *v1.Pod,
 			// Check all affinity terms.
 			if !matchFound && len(affinityTerms) > 0 {
 				affTermsMatch, termsSelectorMatch, err := c.podMatchesPodAffinityTerms(pod, targetPod, nodeInfo, affinityTerms)
+				fmt.Printf("Pod %+v affinity terms and terms selector match targetPod %+v:::%+v %+v\n\n",pod,targetPod,affTermsMatch,termsSelectorMatch)
 				if err != nil {
 					errMessage := fmt.Sprintf("Cannot schedule pod %s onto node %s, because of PodAffinity: %v", podName(pod), node.Name, err)
 					klog.Error(errMessage)
@@ -1552,6 +1557,7 @@ func (c *PodAffinityChecker) satisfiesPodsAffinityAntiAffinity(pod *v1.Pod,
 		}
 
 		if !matchFound && len(affinityTerms) > 0 {
+			fmt.Printf("Pod %+v !matchfound\n\n", pod)
 			// We have not been able to find any matches for the pod's affinity terms.
 			// This pod may be the first pod in a series that have affinity to themselves. In order
 			// to not leave such pods in pending state forever, we check that if no other pod
@@ -1564,6 +1570,7 @@ func (c *PodAffinityChecker) satisfiesPodsAffinityAntiAffinity(pod *v1.Pod,
 			}
 			// Check if pod matches its own affinity properties (namespace and label selector).
 			if !targetPodMatchesAffinityOfPod(pod, pod) {
+				fmt.Printf("Pod doesn't match its own affinity %+v\n\n",pod)
 				klog.V(10).Infof("Cannot schedule pod %+v onto node %v, because of PodAffinity",
 					podName(pod), node.Name)
 				return ErrPodAffinityRulesNotMatch, nil

@@ -703,8 +703,10 @@ func podMatchesAllAffinityTermProperties(pod *v1.Pod, properties []*affinityTerm
 	if len(properties) == 0 {
 		return false
 	}
+	fmt.Printf("Checking property match between pod %+v and properties %+v\n\n",pod,properties)
 	for _, property := range properties {
 		if !priorityutil.PodMatchesTermsNamespaceAndSelector(pod, property.namespaces, property.selector) {
+			fmt.Printf("Pod doesn't match %+v %+v %+v\n\n",property.namespaces, property.selector, pod)
 			return false
 		}
 	}
