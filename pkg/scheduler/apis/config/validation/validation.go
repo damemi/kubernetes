@@ -71,6 +71,36 @@ func ValidateKubeSchedulerConfiguration(cc *config.KubeSchedulerConfiguration) f
 		allErrs = append(allErrs, field.Invalid(field.NewPath("podMaxBackoffSeconds"),
 			cc.PodMaxBackoffSeconds, "must be greater than or equal to PodInitialBackoffSeconds"))
 	}
+
+	binders := 0
+	extenderManagedResources := sets.NewString()
+	extendersPath := field.NewPath("extenders")
+	for i, extender := range cc.Extenders {
+		path := extendersPath.Index(i)
+		if len(extender.PrioritizeVerb) > 0 && extender.Weight <= 0 {
+			allErrs = append(allErrs, field.Invalid(path.Child("weight"),
+				extender.Weight, "must have a positive weight applied to it"))
+		}
+		if extender.BindVerb != "" {
+			binders++
+		}
+		for j, resource := range extender.ManagedResources {
+			managedResourcesPath := path.Child("managedResources").Index(j)
+			errs := validateExtendedResourceName(v1.ResourceName(resource.Name))
+			for _, err := range errs {
+				allErrs = append(allErrs, field.Invalid(managedResourcesPath.Child("name"),
+					resource.Name, fmt.Sprintf("%+v", err)))
+			}
+			if extenderManagedResources.Has(resource.Name) {
+				allErrs = append(allErrs, field.Invalid(managedResourcesPath.Child("name"),
+					resource.Name, "duplicate extender managed resource name"))
+			}
+			extenderManagedResources.Insert(resource.Name)
+		}
+	}
+	if binders > 1 {
+		allErrs = append(allErrs, field.Invalid(extendersPath, binders, "only one extender can implement bind, found"))
+	}
 	return allErrs
 }
 
