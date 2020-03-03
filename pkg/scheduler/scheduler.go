@@ -133,6 +133,7 @@ type schedulerOptions struct {
 	// Contains out-of-tree plugins to be merged with the in-tree registry.
 	frameworkOutOfTreeRegistry framework.Registry
 	profiles                   []schedulerapi.KubeSchedulerProfile
+	extenders                  []schedulerapi.Extender
 }
 
 // Option configures a Scheduler
@@ -193,6 +194,12 @@ func WithPodInitialBackoffSeconds(podInitialBackoffSeconds int64) Option {
 func WithPodMaxBackoffSeconds(podMaxBackoffSeconds int64) Option {
 	return func(o *schedulerOptions) {
 		o.podMaxBackoffSeconds = podMaxBackoffSeconds
+	}
+}
+
+func WithExtenders(e ...schedulerapi.Extender) Option {
+	return func(o *schedulerOptions) {
+		o.extenders = e
 	}
 }
 
@@ -264,6 +271,7 @@ func New(client clientset.Interface,
 		profiles:                 append([]schedulerapi.KubeSchedulerProfile(nil), options.profiles...),
 		registry:                 registry,
 		nodeInfoSnapshot:         snapshot,
+		extenders:                append([]schedulerapi.Extender(nil), options.extenders...),
 	}
 
 	metrics.Register()
