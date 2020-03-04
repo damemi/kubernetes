@@ -47,7 +47,6 @@ import (
 	frameworkplugins "k8s.io/kubernetes/pkg/scheduler/framework/plugins"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	internalcache "k8s.io/kubernetes/pkg/scheduler/internal/cache"
@@ -122,7 +121,7 @@ func (c *Configurator) buildFramework(p schedulerapi.KubeSchedulerProfile) (fram
 }
 
 // create a scheduler from a set of registered plugins.
-func (c *Configurator) create(extenders []core.SchedulerExtender) (*Scheduler, error) {
+func (c *Configurator) create() (*Scheduler, error) {
 	profiles, err := profile.NewMap(c.profiles, c.buildFramework, c.recorderFactory)
 	if err != nil {
 		return nil, fmt.Errorf("initializing profiles: %v", err)
@@ -151,7 +150,7 @@ func (c *Configurator) create(extenders []core.SchedulerExtender) (*Scheduler, e
 		c.schedulerCache,
 		podQueue,
 		c.nodeInfoSnapshot,
-		extenders,
+		c.extenders,
 		c.informerFactory.Core().V1().PersistentVolumeClaims().Lister(),
 		GetPodDisruptionBudgetLister(c.informerFactory),
 		c.disablePreemption,
@@ -188,7 +187,7 @@ func (c *Configurator) createFromProvider(providerName string) (*Scheduler, erro
 		prof.Plugins = plugins
 	}
 
-	return c.create(c.extenders)
+	return c.create()
 }
 
 // createFromConfig creates a scheduler from the configuration file
@@ -250,12 +249,10 @@ func (c *Configurator) createFromConfig(policy schedulerapi.Policy) (*Scheduler,
 				}
 			}
 		}
-		args.NodeResourcesFitArgs = &noderesources.FitArgs{
-			IgnoredResources: ignoredExtendedResources,
-		}
 		// place ignorable extenders to the tail of extenders
 		extenders = append(extenders, ignorableExtenders...)
 	}
+	c.extenders = extenders
 
 	// HardPodAffinitySymmetricWeight in the policy config takes precedence over
 	// CLI configuration.
@@ -314,7 +311,7 @@ func (c *Configurator) createFromConfig(policy schedulerapi.Policy) (*Scheduler,
 		prof.PluginConfig = pluginConfig
 	}
 
-	return c.create(extenders)
+	return c.create()
 }
 
 // getPriorityConfigs returns priorities configuration: ones that will run as priorities and ones that will run

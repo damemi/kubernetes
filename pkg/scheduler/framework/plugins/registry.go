@@ -18,8 +18,6 @@ package plugins
 
 import (
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/json"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpodtopologyspread"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/imagelocality"
@@ -49,7 +47,9 @@ type registryOptions struct {
 // Option configures a registry
 type Option func(*registryOptions)
 
-func WithIgnoredResources(r ...string) Option {
+// WithIgnoredResources specifies which resources to be ignored by the scheduler.
+// This is currently used by the node resources Fit plugin.
+func WithIgnoredResources(r []string) Option {
 	return func(o *registryOptions) {
 		o.ignoredResources = r
 	}
@@ -73,22 +73,8 @@ func NewInTreeRegistry(opts ...Option) framework.Registry {
 		nodeaffinity.Name:             nodeaffinity.New,
 		podtopologyspread.Name:        podtopologyspread.New,
 		nodeunschedulable.Name:        nodeunschedulable.New,
-		noderesources.FitName: func(plArgs *runtime.Unknown, handle framework.FrameworkHandle) (framework.Plugin, error) {
-			args := &noderesources.FitArgs{}
-			if err := framework.DecodeInto(plArgs, args); err != nil {
-				return nil, err
-			}
-			ignoredResources := sets.NewString(append(args.IgnoredResources, options.ignoredResources...)...)
-			args.IgnoredResources = ignoredResources.List()
-			newArgs, err := json.Marshal(args)
-			if err != nil {
-				return nil, err
-			}
-			plugin, err := noderesources.NewFit(&runtime.Unknown{Raw: newArgs}, handle)
-			if err != nil {
-				return nil, err
-			}
-			return plugin, nil
+		noderesources.FitName: func(_ *runtime.Unknown, _ framework.FrameworkHandle) (framework.Plugin, error) {
+			return noderesources.NewFit(options.ignoredResources), nil
 		},
 		noderesources.BalancedAllocationName:       noderesources.NewBalancedAllocation,
 		noderesources.MostAllocatedName:            noderesources.NewMostAllocated,

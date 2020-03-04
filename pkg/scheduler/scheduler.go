@@ -276,7 +276,7 @@ func New(client clientset.Interface,
 		extenders = append(extenders, ignorableExtenders...)
 	}
 
-	registry := frameworkplugins.NewInTreeRegistry(frameworkplugins.WithIgnoredResources(ignoredResources...))
+	registry := frameworkplugins.NewInTreeRegistry(frameworkplugins.WithIgnoredResources(ignoredResources))
 	if err := registry.Merge(options.frameworkOutOfTreeRegistry); err != nil {
 		return nil, err
 	}
