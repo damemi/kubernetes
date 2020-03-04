@@ -105,8 +105,7 @@ type Configurator struct {
 	profiles         []schedulerapi.KubeSchedulerProfile
 	registry         framework.Registry
 	nodeInfoSnapshot *internalcache.Snapshot
-
-	extenders []schedulerapi.Extender
+	extenders        []core.SchedulerExtender
 }
 
 func (c *Configurator) buildFramework(p schedulerapi.KubeSchedulerProfile) (framework.Framework, error) {
@@ -181,25 +180,6 @@ func (c *Configurator) createFromProvider(providerName string) (*Scheduler, erro
 		return nil, fmt.Errorf("algorithm provider %q is not registered", providerName)
 	}
 
-	var extenders []core.SchedulerExtender
-	if len(c.extenders) != 0 {
-		var ignorableExtenders []core.SchedulerExtender
-		for ii := range c.extenders {
-			klog.V(2).Infof("Creating extender with config %+v", c.extenders[ii])
-			extender, err := core.NewHTTPExtender(&c.extenders[ii])
-			if err != nil {
-				return nil, err
-			}
-			if !extender.IsIgnorable() {
-				extenders = append(extenders, extender)
-			} else {
-				ignorableExtenders = append(ignorableExtenders, extender)
-			}
-		}
-		// place ignorable extenders to the tail of extenders
-		extenders = append(extenders, ignorableExtenders...)
-	}
-
 	for i := range c.profiles {
 		prof := &c.profiles[i]
 		plugins := &schedulerapi.Plugins{}
@@ -208,7 +188,7 @@ func (c *Configurator) createFromProvider(providerName string) (*Scheduler, erro
 		prof.Plugins = plugins
 	}
 
-	return c.create(extenders)
+	return c.create(c.extenders)
 }
 
 // createFromConfig creates a scheduler from the configuration file

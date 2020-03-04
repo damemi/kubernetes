@@ -17,6 +17,9 @@ limitations under the License.
 package plugins
 
 import (
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultpodtopologyspread"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/imagelocality"
@@ -39,21 +42,54 @@ import (
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 )
 
+type registryOptions struct {
+	ignoredResources []string
+}
+
+// Option configures a registry
+type Option func(*registryOptions)
+
+func WithIgnoredResources(r ...string) Option {
+	return func(o *registryOptions) {
+		o.ignoredResources = r
+	}
+}
+
 // NewInTreeRegistry builds the registry with all the in-tree plugins.
 // A scheduler that runs out of tree plugins can register additional plugins
 // through the WithFrameworkOutOfTreeRegistry option.
-func NewInTreeRegistry() framework.Registry {
+func NewInTreeRegistry(opts ...Option) framework.Registry {
+	var options registryOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
 	return framework.Registry{
-		defaultpodtopologyspread.Name:              defaultpodtopologyspread.New,
-		imagelocality.Name:                         imagelocality.New,
-		tainttoleration.Name:                       tainttoleration.New,
-		nodename.Name:                              nodename.New,
-		nodeports.Name:                             nodeports.New,
-		nodepreferavoidpods.Name:                   nodepreferavoidpods.New,
-		nodeaffinity.Name:                          nodeaffinity.New,
-		podtopologyspread.Name:                     podtopologyspread.New,
-		nodeunschedulable.Name:                     nodeunschedulable.New,
-		noderesources.FitName:                      noderesources.NewFit,
+		defaultpodtopologyspread.Name: defaultpodtopologyspread.New,
+		imagelocality.Name:            imagelocality.New,
+		tainttoleration.Name:          tainttoleration.New,
+		nodename.Name:                 nodename.New,
+		nodeports.Name:                nodeports.New,
+		nodepreferavoidpods.Name:      nodepreferavoidpods.New,
+		nodeaffinity.Name:             nodeaffinity.New,
+		podtopologyspread.Name:        podtopologyspread.New,
+		nodeunschedulable.Name:        nodeunschedulable.New,
+		noderesources.FitName: func(plArgs *runtime.Unknown, handle framework.FrameworkHandle) (framework.Plugin, error) {
+			args := &noderesources.FitArgs{}
+			if err := framework.DecodeInto(plArgs, args); err != nil {
+				return nil, err
+			}
+			ignoredResources := sets.NewString(append(args.IgnoredResources, options.ignoredResources...)...)
+			args.IgnoredResources = ignoredResources.List()
+			newArgs, err := json.Marshal(args)
+			if err != nil {
+				return nil, err
+			}
+			plugin, err := noderesources.NewFit(&runtime.Unknown{Raw: newArgs}, handle)
+			if err != nil {
+				return nil, err
+			}
+			return plugin, nil
+		},
 		noderesources.BalancedAllocationName:       noderesources.NewBalancedAllocation,
 		noderesources.MostAllocatedName:            noderesources.NewMostAllocated,
 		noderesources.LeastAllocatedName:           noderesources.NewLeastAllocated,

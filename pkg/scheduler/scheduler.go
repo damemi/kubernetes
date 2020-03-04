@@ -197,6 +197,7 @@ func WithPodMaxBackoffSeconds(podMaxBackoffSeconds int64) Option {
 	}
 }
 
+// WithExtenders sets extenders for the Scheduler
 func WithExtenders(e ...schedulerapi.Extender) Option {
 	return func(o *schedulerOptions) {
 		o.extenders = e
@@ -247,7 +248,35 @@ func New(client clientset.Interface,
 		time.Duration(options.bindTimeoutSeconds)*time.Second,
 	)
 
-	registry := frameworkplugins.NewInTreeRegistry()
+	var extenders []core.SchedulerExtender
+	var ignoredResources []string
+	if len(options.extenders) != 0 {
+		var ignorableExtenders []core.SchedulerExtender
+		var ignoredExtendedResources []string
+		for ii := range options.extenders {
+			klog.V(2).Infof("Creating extender with config %+v", options.extenders[ii])
+			extender, err := core.NewHTTPExtender(&options.extenders[ii])
+			if err != nil {
+				return nil, err
+			}
+			if !extender.IsIgnorable() {
+				extenders = append(extenders, extender)
+			} else {
+				ignorableExtenders = append(ignorableExtenders, extender)
+			}
+			for _, r := range options.extenders[ii].ManagedResources {
+				if r.IgnoredByScheduler {
+					ignoredExtendedResources = append(ignoredExtendedResources, r.Name)
+				}
+			}
+		}
+		ignoredResources = ignoredExtendedResources
+
+		// place ignorable extenders to the tail of extenders
+		extenders = append(extenders, ignorableExtenders...)
+	}
+
+	registry := frameworkplugins.NewInTreeRegistry(frameworkplugins.WithIgnoredResources(ignoredResources...))
 	if err := registry.Merge(options.frameworkOutOfTreeRegistry); err != nil {
 		return nil, err
 	}
@@ -271,7 +300,7 @@ func New(client clientset.Interface,
 		profiles:                 append([]schedulerapi.KubeSchedulerProfile(nil), options.profiles...),
 		registry:                 registry,
 		nodeInfoSnapshot:         snapshot,
-		extenders:                append([]schedulerapi.Extender(nil), options.extenders...),
+		extenders:                extenders,
 	}
 
 	metrics.Register()
