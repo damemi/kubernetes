@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"k8s.io/kubernetes/pkg/scheduler"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -350,7 +351,8 @@ func TestSchedulerExtender(t *testing.T) {
 	}
 	policy.APIVersion = "v1"
 
-	testCtx = testutils.InitTestScheduler(t, testCtx, false, &policy)
+	testCtx = testutils.InitTestSchedulerWithOptions(t, testCtx, false, &policy, time.Second, scheduler.WithExtenders(policy.Extenders...))
+	//testCtx = testutils.InitTestScheduler(t, testCtx, false, &policy)
 	defer testutils.CleanupTest(t, testCtx)
 
 	DoTestPodScheduling(testCtx.NS, t, clientSet)

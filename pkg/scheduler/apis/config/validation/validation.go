@@ -72,35 +72,7 @@ func ValidateKubeSchedulerConfiguration(cc *config.KubeSchedulerConfiguration) f
 			cc.PodMaxBackoffSeconds, "must be greater than or equal to PodInitialBackoffSeconds"))
 	}
 
-	binders := 0
-	extenderManagedResources := sets.NewString()
-	extendersPath := field.NewPath("extenders")
-	for i, extender := range cc.Extenders {
-		path := extendersPath.Index(i)
-		if len(extender.PrioritizeVerb) > 0 && extender.Weight <= 0 {
-			allErrs = append(allErrs, field.Invalid(path.Child("weight"),
-				extender.Weight, "must have a positive weight applied to it"))
-		}
-		if extender.BindVerb != "" {
-			binders++
-		}
-		for j, resource := range extender.ManagedResources {
-			managedResourcesPath := path.Child("managedResources").Index(j)
-			errs := validateExtendedResourceName(v1.ResourceName(resource.Name))
-			for _, err := range errs {
-				allErrs = append(allErrs, field.Invalid(managedResourcesPath.Child("name"),
-					resource.Name, fmt.Sprintf("%+v", err)))
-			}
-			if extenderManagedResources.Has(resource.Name) {
-				allErrs = append(allErrs, field.Invalid(managedResourcesPath.Child("name"),
-					resource.Name, "duplicate extender managed resource name"))
-			}
-			extenderManagedResources.Insert(resource.Name)
-		}
-	}
-	if binders > 1 {
-		allErrs = append(allErrs, field.Invalid(extendersPath, binders, "only one extender can implement bind, found"))
-	}
+	allErrs = append(allErrs, validateExtenders(cc.Extenders)...)
 	return allErrs
 }
 
@@ -153,34 +125,49 @@ func ValidatePolicy(policy config.Policy) error {
 		validationErrors = append(validationErrors, validateCustomPriorities(priorities, priority))
 	}
 
-	binders := 0
-	extenderManagedResources := sets.NewString()
-	for _, extender := range policy.Extenders {
-		if len(extender.PrioritizeVerb) > 0 && extender.Weight <= 0 {
-			validationErrors = append(validationErrors, fmt.Errorf("Priority for extender %s should have a positive weight applied to it", extender.URLPrefix))
-		}
-		if extender.BindVerb != "" {
-			binders++
-		}
-		for _, resource := range extender.ManagedResources {
-			errs := validateExtendedResourceName(v1.ResourceName(resource.Name))
-			if len(errs) != 0 {
-				validationErrors = append(validationErrors, errs...)
-			}
-			if extenderManagedResources.Has(resource.Name) {
-				validationErrors = append(validationErrors, fmt.Errorf("Duplicate extender managed resource name %s", string(resource.Name)))
-			}
-			extenderManagedResources.Insert(resource.Name)
-		}
-	}
-	if binders > 1 {
-		validationErrors = append(validationErrors, fmt.Errorf("Only one extender can implement bind, found %v", binders))
+	if extenderErrs := validateExtenders(policy.Extenders); len(extenderErrs) > 0 {
+		validationErrors = append(validationErrors, extenderErrs.ToAggregate().Errors()...)
 	}
 
 	if policy.HardPodAffinitySymmetricWeight < 0 || policy.HardPodAffinitySymmetricWeight > 100 {
 		validationErrors = append(validationErrors, field.Invalid(field.NewPath("hardPodAffinitySymmetricWeight"), policy.HardPodAffinitySymmetricWeight, "not in valid range [0-100]"))
 	}
 	return utilerrors.NewAggregate(validationErrors)
+}
+
+// validateExtenders validates the configured extenders for the Scheduler
+func validateExtenders(extenders []config.Extender) field.ErrorList {
+	allErrs := field.ErrorList{}
+	binders := 0
+	extenderManagedResources := sets.NewString()
+	extendersPath := field.NewPath("extenders")
+	for i, extender := range extenders {
+		path := extendersPath.Index(i)
+		if len(extender.PrioritizeVerb) > 0 && extender.Weight <= 0 {
+			allErrs = append(allErrs, field.Invalid(path.Child("weight"),
+				extender.Weight, "must have a positive weight applied to it"))
+		}
+		if extender.BindVerb != "" {
+			binders++
+		}
+		for j, resource := range extender.ManagedResources {
+			managedResourcesPath := path.Child("managedResources").Index(j)
+			errs := validateExtendedResourceName(v1.ResourceName(resource.Name))
+			for _, err := range errs {
+				allErrs = append(allErrs, field.Invalid(managedResourcesPath.Child("name"),
+					resource.Name, fmt.Sprintf("%+v", err)))
+			}
+			if extenderManagedResources.Has(resource.Name) {
+				allErrs = append(allErrs, field.Invalid(managedResourcesPath.Child("name"),
+					resource.Name, "duplicate extender managed resource name"))
+			}
+			extenderManagedResources.Insert(resource.Name)
+		}
+	}
+	if binders > 1 {
+		allErrs = append(allErrs, field.Invalid(extendersPath, fmt.Sprintf("found %d extenders implementing bind", binders), "only one extender can implement bind"))
+	}
+	return allErrs
 }
 
 // validateCustomPriorities validates that:
