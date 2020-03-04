@@ -72,7 +72,7 @@ func ValidateKubeSchedulerConfiguration(cc *config.KubeSchedulerConfiguration) f
 			cc.PodMaxBackoffSeconds, "must be greater than or equal to PodInitialBackoffSeconds"))
 	}
 
-	allErrs = append(allErrs, validateExtenders(cc.Extenders)...)
+	allErrs = append(allErrs, validateExtenders(field.NewPath("extenders"), cc.Extenders)...)
 	return allErrs
 }
 
@@ -125,7 +125,7 @@ func ValidatePolicy(policy config.Policy) error {
 		validationErrors = append(validationErrors, validateCustomPriorities(priorities, priority))
 	}
 
-	if extenderErrs := validateExtenders(policy.Extenders); len(extenderErrs) > 0 {
+	if extenderErrs := validateExtenders(field.NewPath("extenders"), policy.Extenders); len(extenderErrs) > 0 {
 		validationErrors = append(validationErrors, extenderErrs.ToAggregate().Errors()...)
 	}
 
@@ -136,13 +136,12 @@ func ValidatePolicy(policy config.Policy) error {
 }
 
 // validateExtenders validates the configured extenders for the Scheduler
-func validateExtenders(extenders []config.Extender) field.ErrorList {
+func validateExtenders(fldPath *field.Path, extenders []config.Extender) field.ErrorList {
 	allErrs := field.ErrorList{}
 	binders := 0
 	extenderManagedResources := sets.NewString()
-	extendersPath := field.NewPath("extenders")
 	for i, extender := range extenders {
-		path := extendersPath.Index(i)
+		path := fldPath.Index(i)
 		if len(extender.PrioritizeVerb) > 0 && extender.Weight <= 0 {
 			allErrs = append(allErrs, field.Invalid(path.Child("weight"),
 				extender.Weight, "must have a positive weight applied to it"))
@@ -165,7 +164,7 @@ func validateExtenders(extenders []config.Extender) field.ErrorList {
 		}
 	}
 	if binders > 1 {
-		allErrs = append(allErrs, field.Invalid(extendersPath, fmt.Sprintf("found %d extenders implementing bind", binders), "only one extender can implement bind"))
+		allErrs = append(allErrs, field.Invalid(fldPath, fmt.Sprintf("found %d extenders implementing bind", binders), "only one extender can implement bind"))
 	}
 	return allErrs
 }

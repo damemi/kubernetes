@@ -40,7 +40,6 @@ import (
 	schedulerapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/scheme"
 	"k8s.io/kubernetes/pkg/scheduler/core"
-	frameworkplugins "k8s.io/kubernetes/pkg/scheduler/framework/plugins"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	internalcache "k8s.io/kubernetes/pkg/scheduler/internal/cache"
 	internalqueue "k8s.io/kubernetes/pkg/scheduler/internal/queue"
@@ -248,59 +247,26 @@ func New(client clientset.Interface,
 		time.Duration(options.bindTimeoutSeconds)*time.Second,
 	)
 
-	var extenders []core.SchedulerExtender
-	var ignoredResources []string
-	if len(options.extenders) != 0 {
-		var ignorableExtenders []core.SchedulerExtender
-		var ignoredExtendedResources []string
-		for ii := range options.extenders {
-			klog.V(2).Infof("Creating extender with config %+v", options.extenders[ii])
-			extender, err := core.NewHTTPExtender(&options.extenders[ii])
-			if err != nil {
-				return nil, err
-			}
-			if !extender.IsIgnorable() {
-				extenders = append(extenders, extender)
-			} else {
-				ignorableExtenders = append(ignorableExtenders, extender)
-			}
-			for _, r := range options.extenders[ii].ManagedResources {
-				if r.IgnoredByScheduler {
-					ignoredExtendedResources = append(ignoredExtendedResources, r.Name)
-				}
-			}
-		}
-		ignoredResources = ignoredExtendedResources
-
-		// place ignorable extenders to the tail of extenders
-		extenders = append(extenders, ignorableExtenders...)
-	}
-
-	registry := frameworkplugins.NewInTreeRegistry(frameworkplugins.WithIgnoredResources(ignoredResources))
-	if err := registry.Merge(options.frameworkOutOfTreeRegistry); err != nil {
-		return nil, err
-	}
-
 	snapshot := internalcache.NewEmptySnapshot()
 
 	configurator := &Configurator{
-		client:                   client,
-		recorderFactory:          recorderFactory,
-		informerFactory:          informerFactory,
-		podInformer:              podInformer,
-		volumeBinder:             volumeBinder,
-		schedulerCache:           schedulerCache,
-		StopEverything:           stopEverything,
-		disablePreemption:        options.disablePreemption,
-		percentageOfNodesToScore: options.percentageOfNodesToScore,
-		bindTimeoutSeconds:       options.bindTimeoutSeconds,
-		podInitialBackoffSeconds: options.podInitialBackoffSeconds,
-		podMaxBackoffSeconds:     options.podMaxBackoffSeconds,
-		enableNonPreempting:      utilfeature.DefaultFeatureGate.Enabled(kubefeatures.NonPreemptingPriority),
-		profiles:                 append([]schedulerapi.KubeSchedulerProfile(nil), options.profiles...),
-		registry:                 registry,
-		nodeInfoSnapshot:         snapshot,
-		extenders:                extenders,
+		client:                     client,
+		recorderFactory:            recorderFactory,
+		informerFactory:            informerFactory,
+		podInformer:                podInformer,
+		volumeBinder:               volumeBinder,
+		schedulerCache:             schedulerCache,
+		StopEverything:             stopEverything,
+		disablePreemption:          options.disablePreemption,
+		percentageOfNodesToScore:   options.percentageOfNodesToScore,
+		bindTimeoutSeconds:         options.bindTimeoutSeconds,
+		podInitialBackoffSeconds:   options.podInitialBackoffSeconds,
+		podMaxBackoffSeconds:       options.podMaxBackoffSeconds,
+		enableNonPreempting:        utilfeature.DefaultFeatureGate.Enabled(kubefeatures.NonPreemptingPriority),
+		profiles:                   append([]schedulerapi.KubeSchedulerProfile(nil), options.profiles...),
+		nodeInfoSnapshot:           snapshot,
+		extenders:                  options.extenders,
+		frameworkOutOfTreeRegistry: options.frameworkOutOfTreeRegistry,
 	}
 
 	metrics.Register()
@@ -328,6 +294,7 @@ func New(client clientset.Interface,
 				return nil, err
 			}
 		}
+		configurator.extenders = policy.Extenders
 		sc, err := configurator.createFromConfig(*policy)
 		if err != nil {
 			return nil, fmt.Errorf("couldn't create scheduler from policy: %v", err)
