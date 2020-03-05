@@ -169,8 +169,6 @@ type ConfigProducerArgs struct {
 	RequestedToCapacityRatioArgs *noderesources.RequestedToCapacityRatioArgs
 	// ServiceAffinityArgs is the args for the ServiceAffinity plugin.
 	ServiceAffinityArgs *serviceaffinity.Args
-	// NodeResourcesFitArgs is the args for the NodeResources fit filter.
-	NodeResourcesFitArgs *noderesources.FitArgs
 	// InterPodAffinityArgs is the args for InterPodAffinity plugin
 	InterPodAffinityArgs *interpodaffinity.Args
 }
@@ -225,9 +223,6 @@ func NewLegacyRegistry() *LegacyRegistry {
 			// GeneralPredicate is a combination of predicates.
 			plugins.Filter = appendToPluginSet(plugins.Filter, noderesources.FitName, nil)
 			plugins.PreFilter = appendToPluginSet(plugins.PreFilter, noderesources.FitName, nil)
-			if args.NodeResourcesFitArgs != nil {
-				pluginConfig = append(pluginConfig, NewPluginConfig(noderesources.FitName, args.NodeResourcesFitArgs))
-			}
 			plugins.Filter = appendToPluginSet(plugins.Filter, nodename.Name, nil)
 			plugins.Filter = appendToPluginSet(plugins.Filter, nodeports.Name, nil)
 			plugins.PreFilter = appendToPluginSet(plugins.PreFilter, nodeports.Name, nil)
@@ -243,9 +238,6 @@ func NewLegacyRegistry() *LegacyRegistry {
 		func(args ConfigProducerArgs) (plugins config.Plugins, pluginConfig []config.PluginConfig) {
 			plugins.Filter = appendToPluginSet(plugins.Filter, noderesources.FitName, nil)
 			plugins.PreFilter = appendToPluginSet(plugins.PreFilter, noderesources.FitName, nil)
-			if args.NodeResourcesFitArgs != nil {
-				pluginConfig = append(pluginConfig, NewPluginConfig(noderesources.FitName, args.NodeResourcesFitArgs))
-			}
 			return
 		})
 	registry.registerPredicateConfigProducer(HostNamePred,

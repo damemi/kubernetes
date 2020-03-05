@@ -40,7 +40,6 @@ import (
 	schedulerapi "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config/scheme"
 	"k8s.io/kubernetes/pkg/scheduler/core"
-	frameworkplugins "k8s.io/kubernetes/pkg/scheduler/framework/plugins"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	internalcache "k8s.io/kubernetes/pkg/scheduler/internal/cache"
 	internalqueue "k8s.io/kubernetes/pkg/scheduler/internal/queue"
@@ -133,6 +132,7 @@ type schedulerOptions struct {
 	// Contains out-of-tree plugins to be merged with the in-tree registry.
 	frameworkOutOfTreeRegistry framework.Registry
 	profiles                   []schedulerapi.KubeSchedulerProfile
+	extenders                  []schedulerapi.Extender
 }
 
 // Option configures a Scheduler
@@ -196,6 +196,13 @@ func WithPodMaxBackoffSeconds(podMaxBackoffSeconds int64) Option {
 	}
 }
 
+// WithExtenders sets extenders for the Scheduler
+func WithExtenders(e ...schedulerapi.Extender) Option {
+	return func(o *schedulerOptions) {
+		o.extenders = e
+	}
+}
+
 var defaultSchedulerOptions = schedulerOptions{
 	profiles: []schedulerapi.KubeSchedulerProfile{
 		// Profiles' default plugins are set from the algorithm provider.
@@ -240,30 +247,26 @@ func New(client clientset.Interface,
 		time.Duration(options.bindTimeoutSeconds)*time.Second,
 	)
 
-	registry := frameworkplugins.NewInTreeRegistry()
-	if err := registry.Merge(options.frameworkOutOfTreeRegistry); err != nil {
-		return nil, err
-	}
-
 	snapshot := internalcache.NewEmptySnapshot()
 
 	configurator := &Configurator{
-		client:                   client,
-		recorderFactory:          recorderFactory,
-		informerFactory:          informerFactory,
-		podInformer:              podInformer,
-		volumeBinder:             volumeBinder,
-		schedulerCache:           schedulerCache,
-		StopEverything:           stopEverything,
-		disablePreemption:        options.disablePreemption,
-		percentageOfNodesToScore: options.percentageOfNodesToScore,
-		bindTimeoutSeconds:       options.bindTimeoutSeconds,
-		podInitialBackoffSeconds: options.podInitialBackoffSeconds,
-		podMaxBackoffSeconds:     options.podMaxBackoffSeconds,
-		enableNonPreempting:      utilfeature.DefaultFeatureGate.Enabled(kubefeatures.NonPreemptingPriority),
-		profiles:                 append([]schedulerapi.KubeSchedulerProfile(nil), options.profiles...),
-		registry:                 registry,
-		nodeInfoSnapshot:         snapshot,
+		client:                     client,
+		recorderFactory:            recorderFactory,
+		informerFactory:            informerFactory,
+		podInformer:                podInformer,
+		volumeBinder:               volumeBinder,
+		schedulerCache:             schedulerCache,
+		StopEverything:             stopEverything,
+		disablePreemption:          options.disablePreemption,
+		percentageOfNodesToScore:   options.percentageOfNodesToScore,
+		bindTimeoutSeconds:         options.bindTimeoutSeconds,
+		podInitialBackoffSeconds:   options.podInitialBackoffSeconds,
+		podMaxBackoffSeconds:       options.podMaxBackoffSeconds,
+		enableNonPreempting:        utilfeature.DefaultFeatureGate.Enabled(kubefeatures.NonPreemptingPriority),
+		profiles:                   append([]schedulerapi.KubeSchedulerProfile(nil), options.profiles...),
+		nodeInfoSnapshot:           snapshot,
+		extenders:                  options.extenders,
+		frameworkOutOfTreeRegistry: options.frameworkOutOfTreeRegistry,
 	}
 
 	metrics.Register()
@@ -291,6 +294,10 @@ func New(client clientset.Interface,
 				return nil, err
 			}
 		}
+		// Set extenders on the configurator now that we've decoded the policy
+		// In this case, c.extenders should be nil since we're using a policy (and therefore not componentconfig,
+		// which would have set extenders in the above instantiation of Configurator from CC options)
+		configurator.extenders = policy.Extenders
 		sc, err := configurator.createFromConfig(*policy)
 		if err != nil {
 			return nil, fmt.Errorf("couldn't create scheduler from policy: %v", err)

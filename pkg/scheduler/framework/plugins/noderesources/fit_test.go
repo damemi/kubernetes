@@ -19,7 +19,6 @@ package noderesources
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/runtime"
 	"reflect"
 	"testing"
 
@@ -95,7 +94,7 @@ func TestEnoughRequests(t *testing.T) {
 		pod                       *v1.Pod
 		nodeInfo                  *schedulernodeinfo.NodeInfo
 		name                      string
-		ignoredResources          []byte
+		ignoredResources          []string
 		wantInsufficientResources []InsufficientResource
 		wantStatus                *framework.Status
 	}{
@@ -342,7 +341,7 @@ func TestEnoughRequests(t *testing.T) {
 			pod: newResourcePod(
 				schedulernodeinfo.Resource{MilliCPU: 1, Memory: 1, ScalarResources: map[v1.ResourceName]int64{extendedResourceB: 1}}),
 			nodeInfo:                  schedulernodeinfo.NewNodeInfo(newResourcePod(schedulernodeinfo.Resource{MilliCPU: 0, Memory: 0})),
-			ignoredResources:          []byte(`{"IgnoredResources" : ["example.com/bbb"]}`),
+			ignoredResources:          []string{"example.com/bbb"},
 			name:                      "skip checking ignored extended resource",
 			wantInsufficientResources: []InsufficientResource{},
 		},
@@ -372,8 +371,7 @@ func TestEnoughRequests(t *testing.T) {
 			node := v1.Node{Status: v1.NodeStatus{Capacity: makeResources(10, 20, 32, 5, 20, 5).Capacity, Allocatable: makeAllocatableResources(10, 20, 32, 5, 20, 5)}}
 			test.nodeInfo.SetNode(&node)
 
-			args := &runtime.Unknown{Raw: test.ignoredResources}
-			p, _ := NewFit(args, nil)
+			p := NewFit(test.ignoredResources)
 			cycleState := framework.NewCycleState()
 			preFilterStatus := p.(framework.PreFilterPlugin).PreFilter(context.Background(), cycleState, test.pod)
 			if !preFilterStatus.IsSuccess() {
@@ -398,7 +396,7 @@ func TestPreFilterDisabled(t *testing.T) {
 	nodeInfo := schedulernodeinfo.NewNodeInfo()
 	node := v1.Node{}
 	nodeInfo.SetNode(&node)
-	p, _ := NewFit(nil, nil)
+	p := NewFit(nil)
 	cycleState := framework.NewCycleState()
 	gotStatus := p.(framework.FilterPlugin).Filter(context.Background(), cycleState, pod, nodeInfo)
 	wantStatus := framework.NewStatus(framework.Error, `error reading "PreFilterNodeResourcesFit" from cycleState: not found`)
@@ -445,7 +443,7 @@ func TestNotEnoughRequests(t *testing.T) {
 			node := v1.Node{Status: v1.NodeStatus{Capacity: v1.ResourceList{}, Allocatable: makeAllocatableResources(10, 20, 1, 0, 0, 0)}}
 			test.nodeInfo.SetNode(&node)
 
-			p, _ := NewFit(nil, nil)
+			p := NewFit(nil)
 			cycleState := framework.NewCycleState()
 			preFilterStatus := p.(framework.PreFilterPlugin).PreFilter(context.Background(), cycleState, test.pod)
 			if !preFilterStatus.IsSuccess() {
@@ -501,7 +499,7 @@ func TestStorageRequests(t *testing.T) {
 			node := v1.Node{Status: v1.NodeStatus{Capacity: makeResources(10, 20, 32, 5, 20, 5).Capacity, Allocatable: makeAllocatableResources(10, 20, 32, 5, 20, 5)}}
 			test.nodeInfo.SetNode(&node)
 
-			p, _ := NewFit(nil, nil)
+			p := NewFit(nil)
 			cycleState := framework.NewCycleState()
 			preFilterStatus := p.(framework.PreFilterPlugin).PreFilter(context.Background(), cycleState, test.pod)
 			if !preFilterStatus.IsSuccess() {

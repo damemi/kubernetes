@@ -47,7 +47,6 @@ import (
 	frameworkplugins "k8s.io/kubernetes/pkg/scheduler/framework/plugins"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	framework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 	internalcache "k8s.io/kubernetes/pkg/scheduler/internal/cache"
@@ -102,9 +101,11 @@ type Configurator struct {
 
 	enableNonPreempting bool
 
-	profiles         []schedulerapi.KubeSchedulerProfile
-	registry         framework.Registry
-	nodeInfoSnapshot *internalcache.Snapshot
+	profiles                   []schedulerapi.KubeSchedulerProfile
+	registry                   framework.Registry
+	frameworkOutOfTreeRegistry framework.Registry
+	nodeInfoSnapshot           *internalcache.Snapshot
+	extenders                  []schedulerapi.Extender
 }
 
 func (c *Configurator) buildFramework(p schedulerapi.KubeSchedulerProfile) (framework.Framework, error) {
@@ -121,7 +122,37 @@ func (c *Configurator) buildFramework(p schedulerapi.KubeSchedulerProfile) (fram
 }
 
 // create a scheduler from a set of registered plugins.
-func (c *Configurator) create(extenders []core.SchedulerExtender) (*Scheduler, error) {
+func (c *Configurator) create() (*Scheduler, error) {
+	var extenders []core.SchedulerExtender
+	var ignoredExtendedResources []string
+	if len(c.extenders) != 0 {
+		var ignorableExtenders []core.SchedulerExtender
+		for ii := range c.extenders {
+			klog.V(2).Infof("Creating extender with config %+v", c.extenders[ii])
+			extender, err := core.NewHTTPExtender(&c.extenders[ii])
+			if err != nil {
+				return nil, err
+			}
+			if !extender.IsIgnorable() {
+				extenders = append(extenders, extender)
+			} else {
+				ignorableExtenders = append(ignorableExtenders, extender)
+			}
+			for _, r := range c.extenders[ii].ManagedResources {
+				if r.IgnoredByScheduler {
+					ignoredExtendedResources = append(ignoredExtendedResources, r.Name)
+				}
+			}
+		}
+		// place ignorable extenders to the tail of extenders
+		extenders = append(extenders, ignorableExtenders...)
+	}
+
+	c.registry = frameworkplugins.NewInTreeRegistry(frameworkplugins.WithIgnoredResources(ignoredExtendedResources))
+	if err := c.registry.Merge(c.frameworkOutOfTreeRegistry); err != nil {
+		return nil, err
+	}
+
 	profiles, err := profile.NewMap(c.profiles, c.buildFramework, c.recorderFactory)
 	if err != nil {
 		return nil, fmt.Errorf("initializing profiles: %v", err)
@@ -186,11 +217,11 @@ func (c *Configurator) createFromProvider(providerName string) (*Scheduler, erro
 		plugins.Apply(prof.Plugins)
 		prof.Plugins = plugins
 	}
-
-	return c.create([]core.SchedulerExtender{})
+	return c.create()
 }
 
 // createFromConfig creates a scheduler from the configuration file
+// Only reachable when using v1alpha1 component config
 func (c *Configurator) createFromConfig(policy schedulerapi.Policy) (*Scheduler, error) {
 	lr := frameworkplugins.NewLegacyRegistry()
 	args := &frameworkplugins.ConfigProducerArgs{}
@@ -228,33 +259,6 @@ func (c *Configurator) createFromConfig(policy schedulerapi.Policy) (*Scheduler,
 		}
 	}
 
-	var extenders []core.SchedulerExtender
-	if len(policy.Extenders) != 0 {
-		var ignorableExtenders []core.SchedulerExtender
-		var ignoredExtendedResources []string
-		for ii := range policy.Extenders {
-			klog.V(2).Infof("Creating extender with config %+v", policy.Extenders[ii])
-			extender, err := core.NewHTTPExtender(&policy.Extenders[ii])
-			if err != nil {
-				return nil, err
-			}
-			if !extender.IsIgnorable() {
-				extenders = append(extenders, extender)
-			} else {
-				ignorableExtenders = append(ignorableExtenders, extender)
-			}
-			for _, r := range policy.Extenders[ii].ManagedResources {
-				if r.IgnoredByScheduler {
-					ignoredExtendedResources = append(ignoredExtendedResources, r.Name)
-				}
-			}
-		}
-		args.NodeResourcesFitArgs = &noderesources.FitArgs{
-			IgnoredResources: ignoredExtendedResources,
-		}
-		// place ignorable extenders to the tail of extenders
-		extenders = append(extenders, ignorableExtenders...)
-	}
 	// HardPodAffinitySymmetricWeight in the policy config takes precedence over
 	// CLI configuration.
 	if policy.HardPodAffinitySymmetricWeight != 0 {
@@ -312,7 +316,7 @@ func (c *Configurator) createFromConfig(policy schedulerapi.Policy) (*Scheduler,
 		prof.PluginConfig = pluginConfig
 	}
 
-	return c.create(extenders)
+	return c.create()
 }
 
 // getPriorityConfigs returns priorities configuration: ones that will run as priorities and ones that will run
