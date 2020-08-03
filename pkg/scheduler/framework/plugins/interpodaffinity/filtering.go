@@ -79,7 +79,10 @@ func (s *preFilterState) updateWithPod(updatedPod *v1.Pod, node *v1.Node, multip
 
 	// Update matching existing anti-affinity terms.
 	// TODO(#91058): AddPod/RemovePod should pass a *framework.PodInfo type instead of *v1.Pod.
-	updatedPodInfo := framework.NewPodInfo(updatedPod)
+	updatedPodInfo, err := framework.NewPodInfo(updatedPod)
+	if err != nil {
+		return err
+	}
 	s.topologyToMatchedExistingAntiAffinityTerms.updateWithAntiAffinityTerms(s.podInfo.Pod, node, updatedPodInfo.RequiredAntiAffinityTerms, multiplier)
 
 	// Update matching incoming pod (anti)affinity terms.
@@ -250,7 +253,10 @@ func (pl *InterPodAffinity) PreFilter(ctx context.Context, cycleState *framework
 		return framework.NewStatus(framework.Error, fmt.Sprintf("failed to list NodeInfos with pods with affinity: %v", err))
 	}
 
-	podInfo := framework.NewPodInfo(pod)
+	podInfo, err := framework.NewPodInfo(pod)
+	if err != nil {
+		return framework.NewStatus(framework.Error, fmt.Sprintf("failed to parse podInfo: %+v", err))
+	}
 
 	// existingPodAntiAffinityMap will be used later for efficient check on existing pods' anti-affinity
 	existingPodAntiAffinityMap := getTPMapMatchingExistingAntiAffinity(pod, havePodsWithAffinityNodes)

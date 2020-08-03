@@ -409,9 +409,10 @@ func addNominatedPods(ctx context.Context, ph framework.PreemptHandle, pod *v1.P
 	nodeInfoOut := nodeInfo.Clone()
 	stateOut := state.Clone()
 	podsAdded := false
+	var err error
 	for _, p := range nominatedPods {
 		if podutil.GetPodPriority(p) >= podutil.GetPodPriority(pod) && p.UID != pod.UID {
-			nodeInfoOut.AddPod(p)
+			err = nodeInfoOut.AddPod(p)
 			status := ph.RunPreFilterExtensionAddPod(ctx, stateOut, pod, p, nodeInfoOut)
 			if !status.IsSuccess() {
 				return false, state, nodeInfo, status.AsError()
@@ -419,7 +420,7 @@ func addNominatedPods(ctx context.Context, ph framework.PreemptHandle, pod *v1.P
 			podsAdded = true
 		}
 	}
-	return podsAdded, stateOut, nodeInfoOut, nil
+	return podsAdded, stateOut, nodeInfoOut, err
 }
 
 // PodPassesFiltersOnNode checks whether a node given by NodeInfo satisfies the

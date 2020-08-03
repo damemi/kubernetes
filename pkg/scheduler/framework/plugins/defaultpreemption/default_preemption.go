@@ -510,7 +510,10 @@ func selectVictimsOnNode(
 		return nil
 	}
 	addPod := func(ap *v1.Pod) error {
-		nodeInfo.AddPod(ap)
+		err := nodeInfo.AddPod(ap)
+		if err != nil {
+			return err
+		}
 		status := ph.RunPreFilterExtensionAddPod(ctx, state, pod, ap, nodeInfo)
 		if !status.IsSuccess() {
 			return status.AsError()
