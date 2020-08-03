@@ -19,6 +19,7 @@ package interpodaffinity
 import (
 	"context"
 	"fmt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sync/atomic"
 
 	v1 "k8s.io/api/core/v1"
@@ -238,6 +239,29 @@ func getTPMapMatchingIncomingAffinityAntiAffinity(podInfo *framework.PodInfo, al
 	return affinityCounts, antiAffinityCounts
 }
 
+func validateRequiredAffinityTerms(pod *v1.Pod) error {
+	if pod.Spec.Affinity == nil {
+		return nil
+	}
+	var terms []v1.PodAffinityTerm
+	if pod.Spec.Affinity.PodAffinity != nil {
+		for _, term := range pod.Spec.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution {
+			terms = append(terms, term)
+		}
+	}
+	if pod.Spec.Affinity.PodAntiAffinity != nil {
+		for _, term := range pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution {
+			terms = append(terms, term)
+		}
+	}
+	for _, term := range terms {
+		if _, err := metav1.LabelSelectorAsSelector(term.LabelSelector); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // PreFilter invoked at the prefilter extension point.
 func (pl *InterPodAffinity) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod) *framework.Status {
 	var allNodes []*framework.NodeInfo
@@ -248,6 +272,10 @@ func (pl *InterPodAffinity) PreFilter(ctx context.Context, cycleState *framework
 	}
 	if havePodsWithAffinityNodes, err = pl.sharedLister.NodeInfos().HavePodsWithAffinityList(); err != nil {
 		return framework.NewStatus(framework.Error, fmt.Sprintf("failed to list NodeInfos with pods with affinity: %v", err))
+	}
+
+	if err := validateRequiredAffinityTerms(pod); err != nil {
+		return framework.NewStatus(framework.Error, fmt.Sprintf("error parsing pod affinity term: %+v", err))
 	}
 
 	podInfo := framework.NewPodInfo(pod)
