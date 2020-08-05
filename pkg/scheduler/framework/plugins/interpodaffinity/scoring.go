@@ -19,7 +19,6 @@ package interpodaffinity
 import (
 	"context"
 	"fmt"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sync/atomic"
 
 	v1 "k8s.io/api/core/v1"
@@ -125,29 +124,6 @@ func (pl *InterPodAffinity) processExistingPod(
 	topoScore.processTerms(existingPod.PreferredAntiAffinityTerms, incomingPod, existingPodNode, -1)
 }
 
-func validatePreferredAffinityTerms(pod *v1.Pod) error {
-	if pod.Spec.Affinity == nil {
-		return nil
-	}
-	var terms []v1.PodAffinityTerm
-	if pod.Spec.Affinity.PodAffinity != nil {
-		for _, term := range pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
-			terms = append(terms, term.PodAffinityTerm)
-		}
-	}
-	if pod.Spec.Affinity.PodAntiAffinity != nil {
-		for _, term := range pod.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
-			terms = append(terms, term.PodAffinityTerm)
-		}
-	}
-	for _, term := range terms {
-		if _, err := metav1.LabelSelectorAsSelector(term.LabelSelector); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // PreScore builds and writes cycle state used by Score and NormalizeScore.
 func (pl *InterPodAffinity) PreScore(
 	pCtx context.Context,
@@ -168,10 +144,6 @@ func (pl *InterPodAffinity) PreScore(
 	hasAffinityConstraints := affinity != nil && affinity.PodAffinity != nil
 	hasAntiAffinityConstraints := affinity != nil && affinity.PodAntiAffinity != nil
 
-	if err := validatePreferredAffinityTerms(pod); err != nil {
-		return framework.NewStatus(framework.Error, fmt.Sprintf("error parsing pod affinity term: %+v", err))
-	}
-
 	// Unless the pod being scheduled has affinity terms, we only
 	// need to process nodes hosting pods with affinity.
 	var allNodes []*framework.NodeInfo
@@ -188,9 +160,14 @@ func (pl *InterPodAffinity) PreScore(
 		}
 	}
 
+	podInfo := framework.NewPodInfo(pod)
+	if podInfo.PodError != nil {
+		return framework.NewStatus(framework.Error, fmt.Sprintf("error parsing pod: %+v", err))
+	}
+
 	state := &preScoreState{
 		topologyScore: make(map[string]map[string]int64),
-		podInfo:       framework.NewPodInfo(pod),
+		podInfo:       podInfo,
 	}
 
 	topoScores := make([]scoreMap, len(allNodes))
