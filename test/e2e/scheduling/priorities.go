@@ -20,7 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"k8s.io/klog/v2"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/onsi/ginkgo"
@@ -304,18 +306,18 @@ var _ = SIGDescribe("SchedulerPriorities [Serial]", func() {
 		nodeName := nodeList.Items[0].Name
 
 		ginkgo.By("Trying to apply 10 (tolerable) taints on the first node.")
+		// Defer cleaning up the taints to guarantee that all matching taints get removed after the test
+		defer cleanupTestTaints(cs, nodeName)
 		var tolerations []v1.Toleration
 		for i := 0; i < 10; i++ {
 			testTaint := addRandomTaintToNode(cs, nodeName)
 			tolerations = append(tolerations, v1.Toleration{Key: testTaint.Key, Value: testTaint.Value, Effect: testTaint.Effect})
-			defer e2enode.RemoveTaintOffNode(cs, nodeName, *testTaint)
 		}
 		ginkgo.By("Adding 10 intolerable taints to all other nodes")
 		for i := 1; i < len(nodeList.Items); i++ {
 			node := nodeList.Items[i]
 			for i := 0; i < 10; i++ {
-				testTaint := addRandomTaintToNode(cs, node.Name)
-				defer e2enode.RemoveTaintOffNode(cs, node.Name, *testTaint)
+				addRandomTaintToNode(cs, node.Name)
 			}
 		}
 
@@ -584,11 +586,27 @@ func createRC(ns, rsName string, replicas int32, rcPodLabels map[string]string, 
 
 func addRandomTaintToNode(cs clientset.Interface, nodeName string) *v1.Taint {
 	testTaint := v1.Taint{
-		Key:    fmt.Sprintf("kubernetes.io/e2e-taint-key-%s", string(uuid.NewUUID())),
+		Key:    fmt.Sprintf("kubernetes.io/scheduling-priorities-e2e-taint-key-%s", string(uuid.NewUUID())),
 		Value:  fmt.Sprintf("testing-taint-value-%s", string(uuid.NewUUID())),
 		Effect: v1.TaintEffectPreferNoSchedule,
 	}
 	e2enode.AddOrUpdateTaintOnNode(cs, nodeName, testTaint)
 	framework.ExpectNodeHasTaint(cs, nodeName, &testTaint)
 	return &testTaint
+}
+
+func cleanupTestTaints(cs clientset.Interface, nodeName string) {
+	node, err := cs.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+	if err != nil {
+		klog.ErrorS(err, "unable to get node", "name", nodeName)
+		return
+	}
+	var newTaints []v1.Taint
+	for _, taint := range node.Spec.Taints {
+		if !strings.HasPrefix(taint.Key, "kubernetes.io/scheduling-priorities-e2e-taint-key") {
+			newTaints = append(newTaints, taint)
+		}
+	}
+	node.Spec.Taints = newTaints
+	cs.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 }
