@@ -41,7 +41,6 @@ import (
 	e2enode "k8s.io/kubernetes/test/e2e/framework/node"
 	e2epod "k8s.io/kubernetes/test/e2e/framework/pod"
 	e2erc "k8s.io/kubernetes/test/e2e/framework/rc"
-	e2eskipper "k8s.io/kubernetes/test/e2e/framework/skipper"
 	testutils "k8s.io/kubernetes/test/utils"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 )
@@ -148,89 +147,6 @@ var _ = SIGDescribe("SchedulerPriorities [Serial]", func() {
 		framework.ExpectNoError(err)
 		err = e2epod.WaitForPodsRunningReady(cs, metav1.NamespaceSystem, int32(systemPodsNo), 0, framework.PodReadyBeforeTimeout, map[string]string{})
 		framework.ExpectNoError(err)
-	})
-
-	ginkgo.It("Pod should be scheduled to node that don't match the PodAntiAffinity terms", func() {
-
-		e2eskipper.SkipUnlessNodeCountIsAtLeast(2)
-
-		ginkgo.By("Trying to launch a pod with a label to get a node which can launch it.")
-		pod := runPausePod(f, pausePodConfig{
-			Name:   "pod-with-label-security-s1",
-			Labels: map[string]string{"security": "S1"},
-		})
-		nodeName := pod.Spec.NodeName
-
-		k := v1.LabelHostname
-		ginkgo.By("Verifying the node has a label " + k)
-		node, err := cs.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
-		framework.ExpectNoError(err)
-		if _, hasLabel := node.Labels[k]; !hasLabel {
-			// If the label is not exists, label all nodes for testing.
-
-			ginkgo.By("Trying to apply a label on the found node.")
-			k = "kubernetes.io/e2e-node-topologyKey"
-			v := "topologyvalue1"
-			framework.AddOrUpdateLabelOnNode(cs, nodeName, k, v)
-			framework.ExpectNodeHasLabel(cs, nodeName, k, v)
-			defer framework.RemoveLabelOffNode(cs, nodeName, k)
-
-			ginkgo.By("Trying to apply a label on other nodes.")
-			v = "topologyvalue2"
-			for _, node := range nodeList.Items {
-				if node.Name != nodeName {
-					framework.AddOrUpdateLabelOnNode(cs, node.Name, k, v)
-					framework.ExpectNodeHasLabel(cs, node.Name, k, v)
-					defer framework.RemoveLabelOffNode(cs, node.Name, k)
-				}
-			}
-		}
-
-		// make the nodes have balanced cpu,mem usage
-		err = createBalancedPodForNodes(f, cs, ns, nodeList.Items, podRequestedResource, 0.6)
-		framework.ExpectNoError(err)
-		ginkgo.By("Trying to launch the pod with podAntiAffinity.")
-		labelPodName := "pod-with-pod-antiaffinity"
-		pod = createPausePod(f, pausePodConfig{
-			Resources: podRequestedResource,
-			Name:      labelPodName,
-			Affinity: &v1.Affinity{
-				PodAntiAffinity: &v1.PodAntiAffinity{
-					PreferredDuringSchedulingIgnoredDuringExecution: []v1.WeightedPodAffinityTerm{
-						{
-							PodAffinityTerm: v1.PodAffinityTerm{
-								LabelSelector: &metav1.LabelSelector{
-									MatchExpressions: []metav1.LabelSelectorRequirement{
-										{
-											Key:      "security",
-											Operator: metav1.LabelSelectorOpIn,
-											Values:   []string{"S1", "value2"},
-										},
-										{
-											Key:      "security",
-											Operator: metav1.LabelSelectorOpNotIn,
-											Values:   []string{"S2"},
-										}, {
-											Key:      "security",
-											Operator: metav1.LabelSelectorOpExists,
-										},
-									},
-								},
-								TopologyKey: k,
-								Namespaces:  []string{ns},
-							},
-							Weight: 10,
-						},
-					},
-				},
-			},
-		})
-		ginkgo.By("Wait the pod becomes running")
-		framework.ExpectNoError(e2epod.WaitForPodNameRunningInNamespace(f.ClientSet, pod.Name, f.Namespace.Name))
-		labelPod, err := cs.CoreV1().Pods(ns).Get(context.TODO(), labelPodName, metav1.GetOptions{})
-		framework.ExpectNoError(err)
-		ginkgo.By("Verify the pod was scheduled to the expected node.")
-		framework.ExpectNotEqual(labelPod.Spec.NodeName, nodeName)
 	})
 
 	ginkgo.It("Pod should avoid nodes that have avoidPod annotation", func() {
