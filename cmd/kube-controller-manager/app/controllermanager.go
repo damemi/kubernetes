@@ -214,7 +214,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 	run := func(ctx context.Context, startSATokenController InitFunc, initializersFunc ControllerInitializersFunc) {
 
-		controllerContext, err := CreateControllerContext(c, rootClientBuilder, clientBuilder, ctx.Done())
+		controllerContext, err := CreateControllerContext(c, rootClientBuilder, clientBuilder, ctx.Done(), ctx)
 		if err != nil {
 			klog.Fatalf("error building controller context: %v", err)
 		}
@@ -314,6 +314,9 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 // ControllerContext defines the context object for controller
 type ControllerContext struct {
+	// Context is a context.Context for client calls
+	Context context.Context
+
 	// ClientBuilder will provide a client for this controller to use
 	ClientBuilder clientbuilder.ControllerClientBuilder
 
@@ -484,7 +487,7 @@ func GetAvailableResources(clientBuilder clientbuilder.ControllerClientBuilder) 
 // CreateControllerContext creates a context struct containing references to resources needed by the
 // controllers such as the cloud provider and clientBuilder. rootClientBuilder is only used for
 // the shared-informers client and token controller.
-func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clientBuilder clientbuilder.ControllerClientBuilder, stop <-chan struct{}) (ControllerContext, error) {
+func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clientBuilder clientbuilder.ControllerClientBuilder, stop <-chan struct{}, ctx context.Context) (ControllerContext, error) {
 	versionedClient := rootClientBuilder.ClientOrDie("shared-informers")
 	sharedInformers := informers.NewSharedInformerFactory(versionedClient, ResyncPeriod(s)())
 
@@ -516,7 +519,8 @@ func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clien
 		return ControllerContext{}, err
 	}
 
-	ctx := ControllerContext{
+	cctx := ControllerContext{
+		Context:                         ctx,
 		ClientBuilder:                   clientBuilder,
 		InformerFactory:                 sharedInformers,
 		ObjectOrMetadataInformerFactory: informerfactory.NewInformerFactory(sharedInformers, metadataInformers),
@@ -529,7 +533,7 @@ func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clien
 		InformersStarted:                make(chan struct{}),
 		ResyncPeriod:                    ResyncPeriod(s),
 	}
-	return ctx, nil
+	return cctx, nil
 }
 
 // StartControllers starts a set of controllers with a specified ControllerContext
