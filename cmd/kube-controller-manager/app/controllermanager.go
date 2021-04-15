@@ -214,12 +214,12 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 	run := func(ctx context.Context, startSATokenController InitFunc, initializersFunc ControllerInitializersFunc) {
 
-		controllerContext, err := CreateControllerContext(c, rootClientBuilder, clientBuilder, ctx.Done(), ctx)
+		controllerContext, err := CreateControllerContext(c, rootClientBuilder, clientBuilder, ctx.Done())
 		if err != nil {
 			klog.Fatalf("error building controller context: %v", err)
 		}
 		controllerInitializers := initializersFunc(controllerContext.LoopMode)
-		if err := StartControllers(controllerContext, startSATokenController, controllerInitializers, unsecuredMux); err != nil {
+		if err := StartControllers(controllerContext, startSATokenController, controllerInitializers, unsecuredMux, ctx); err != nil {
 			klog.Fatalf("error starting controllers: %v", err)
 		}
 
@@ -314,9 +314,6 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 // ControllerContext defines the context object for controller
 type ControllerContext struct {
-	// Context is a context.Context for client calls
-	Context context.Context
-
 	// ClientBuilder will provide a client for this controller to use
 	ClientBuilder clientbuilder.ControllerClientBuilder
 
@@ -370,7 +367,7 @@ func (c ControllerContext) IsControllerEnabled(name string) bool {
 // InitFunc is used to launch a particular controller.  It may run additional "should I activate checks".
 // Any error returned will cause the controller process to `Fatal`
 // The bool indicates whether the controller was enabled.
-type InitFunc func(ctx ControllerContext) (debuggingHandler http.Handler, enabled bool, err error)
+type InitFunc func(controllerCtx ControllerContext, ctx context.Context) (debuggingHandler http.Handler, enabled bool, err error)
 
 // ControllerInitializersFunc is used to create a collection of initializers
 //  given the loopMode.
@@ -487,7 +484,7 @@ func GetAvailableResources(clientBuilder clientbuilder.ControllerClientBuilder) 
 // CreateControllerContext creates a context struct containing references to resources needed by the
 // controllers such as the cloud provider and clientBuilder. rootClientBuilder is only used for
 // the shared-informers client and token controller.
-func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clientBuilder clientbuilder.ControllerClientBuilder, stop <-chan struct{}, ctx context.Context) (ControllerContext, error) {
+func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clientBuilder clientbuilder.ControllerClientBuilder, stop <-chan struct{}) (ControllerContext, error) {
 	versionedClient := rootClientBuilder.ClientOrDie("shared-informers")
 	sharedInformers := informers.NewSharedInformerFactory(versionedClient, ResyncPeriod(s)())
 
@@ -519,8 +516,7 @@ func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clien
 		return ControllerContext{}, err
 	}
 
-	cctx := ControllerContext{
-		Context:                         ctx,
+	ctx := ControllerContext{
 		ClientBuilder:                   clientBuilder,
 		InformerFactory:                 sharedInformers,
 		ObjectOrMetadataInformerFactory: informerfactory.NewInformerFactory(sharedInformers, metadataInformers),
@@ -533,35 +529,35 @@ func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clien
 		InformersStarted:                make(chan struct{}),
 		ResyncPeriod:                    ResyncPeriod(s),
 	}
-	return cctx, nil
+	return ctx, nil
 }
 
 // StartControllers starts a set of controllers with a specified ControllerContext
-func StartControllers(ctx ControllerContext, startSATokenController InitFunc, controllers map[string]InitFunc, unsecuredMux *mux.PathRecorderMux) error {
+func StartControllers(controllerCtx ControllerContext, startSATokenController InitFunc, controllers map[string]InitFunc, unsecuredMux *mux.PathRecorderMux, ctx context.Context) error {
 	// Always start the SA token controller first using a full-power client, since it needs to mint tokens for the rest
 	// If this fails, just return here and fail since other controllers won't be able to get credentials.
 	if startSATokenController != nil {
-		if _, _, err := startSATokenController(ctx); err != nil {
+		if _, _, err := startSATokenController(controllerCtx); err != nil {
 			return err
 		}
 	}
 
 	// Initialize the cloud provider with a reference to the clientBuilder only after token controller
 	// has started in case the cloud provider uses the client builder.
-	if ctx.Cloud != nil {
-		ctx.Cloud.Initialize(ctx.ClientBuilder, ctx.Stop)
+	if controllerCtx.Cloud != nil {
+		controllerCtx.Cloud.Initialize(controllerCtx.ClientBuilder, controllerCtx.Stop)
 	}
 
 	for controllerName, initFn := range controllers {
-		if !ctx.IsControllerEnabled(controllerName) {
+		if !controllerCtx.IsControllerEnabled(controllerName) {
 			klog.Warningf("%q is disabled", controllerName)
 			continue
 		}
 
-		time.Sleep(wait.Jitter(ctx.ComponentConfig.Generic.ControllerStartInterval.Duration, ControllerStartJitter))
+		time.Sleep(wait.Jitter(controllerCtx.ComponentConfig.Generic.ControllerStartInterval.Duration, ControllerStartJitter))
 
 		klog.V(1).Infof("Starting %q", controllerName)
-		debugHandler, started, err := initFn(ctx)
+		debugHandler, started, err := initFn(controllerCtx, ctx)
 		if err != nil {
 			klog.Errorf("Error starting %q", controllerName)
 			return err

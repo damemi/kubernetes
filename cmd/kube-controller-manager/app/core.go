@@ -21,6 +21,7 @@ limitations under the License.
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -408,15 +409,14 @@ func startEphemeralVolumeController(ctx ControllerContext) (http.Handler, bool, 
 	return nil, false, nil
 }
 
-func startEndpointController(ctx ControllerContext) (http.Handler, bool, error) {
+func startEndpointController(controllerCtx ControllerContext, ctx context.Context) (http.Handler, bool, error) {
 	go endpointcontroller.NewEndpointController(
-		ctx.InformerFactory.Core().V1().Pods(),
-		ctx.InformerFactory.Core().V1().Services(),
-		ctx.InformerFactory.Core().V1().Endpoints(),
-		ctx.ClientBuilder.ClientOrDie("endpoint-controller"),
-		ctx.ComponentConfig.EndpointController.EndpointUpdatesBatchPeriod.Duration,
-		ctx.Context,
-	).Run(int(ctx.ComponentConfig.EndpointController.ConcurrentEndpointSyncs), ctx.Stop)
+		controllerCtx.InformerFactory.Core().V1().Pods(),
+		controllerCtx.InformerFactory.Core().V1().Services(),
+		controllerCtx.InformerFactory.Core().V1().Endpoints(),
+		controllerCtx.ClientBuilder.ClientOrDie("endpoint-controller"),
+		controllerCtx.ComponentConfig.EndpointController.EndpointUpdatesBatchPeriod.Duration,
+	).Run(int(controllerCtx.ComponentConfig.EndpointController.ConcurrentEndpointSyncs), controllerCtx.Stop, ctx)
 	return nil, true, nil
 }
 
