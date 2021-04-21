@@ -53,17 +53,17 @@ func startDaemonSetController(ctx context.Context, controllerContext ControllerC
 	return nil, true, nil
 }
 
-func startStatefulSetController(ctx ControllerContext) (http.Handler, bool, error) {
-	if !ctx.AvailableResources[schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}] {
+func startStatefulSetController(ctx context.Context, controllerContext ControllerContext) (http.Handler, bool, error) {
+	if !controllerContext.AvailableResources[schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}] {
 		return nil, false, nil
 	}
 	go statefulset.NewStatefulSetController(
-		ctx.InformerFactory.Core().V1().Pods(),
-		ctx.InformerFactory.Apps().V1().StatefulSets(),
-		ctx.InformerFactory.Core().V1().PersistentVolumeClaims(),
-		ctx.InformerFactory.Apps().V1().ControllerRevisions(),
-		ctx.ClientBuilder.ClientOrDie("statefulset-controller"),
-	).Run(int(ctx.ComponentConfig.StatefulSetController.ConcurrentStatefulSetSyncs), ctx.Stop)
+		controllerContext.InformerFactory.Core().V1().Pods(),
+		controllerContext.InformerFactory.Apps().V1().StatefulSets(),
+		controllerContext.InformerFactory.Core().V1().PersistentVolumeClaims(),
+		controllerContext.InformerFactory.Apps().V1().ControllerRevisions(),
+		controllerContext.ClientBuilder.ClientOrDie("statefulset-controller"),
+	).Run(ctx, int(controllerContext.ComponentConfig.StatefulSetController.ConcurrentStatefulSetSyncs), controllerContext.Stop)
 	return nil, true, nil
 }
 

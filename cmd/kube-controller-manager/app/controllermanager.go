@@ -533,11 +533,11 @@ func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clien
 }
 
 // StartControllers starts a set of controllers with a specified ControllerContext
-func StartControllers(controllerCtx ControllerContext, startSATokenController InitFunc, controllers map[string]InitFunc, unsecuredMux *mux.PathRecorderMux, ctx context.Context) error {
+func StartControllers(ctx context.Context, controllerCtx ControllerContext, startSATokenController InitFunc, controllers map[string]InitFunc, unsecuredMux *mux.PathRecorderMux) error {
 	// Always start the SA token controller first using a full-power client, since it needs to mint tokens for the rest
 	// If this fails, just return here and fail since other controllers won't be able to get credentials.
 	if startSATokenController != nil {
-		if _, _, err := startSATokenController(controllerCtx); err != nil {
+		if _, _, err := startSATokenController(ctx, controllerCtx); err != nil {
 			return err
 		}
 	}
@@ -557,7 +557,7 @@ func StartControllers(controllerCtx ControllerContext, startSATokenController In
 		time.Sleep(wait.Jitter(controllerCtx.ComponentConfig.Generic.ControllerStartInterval.Duration, ControllerStartJitter))
 
 		klog.V(1).Infof("Starting %q", controllerName)
-		debugHandler, started, err := initFn(controllerCtx, ctx)
+		debugHandler, started, err := initFn(ctx, controllerCtx)
 		if err != nil {
 			klog.Errorf("Error starting %q", controllerName)
 			return err

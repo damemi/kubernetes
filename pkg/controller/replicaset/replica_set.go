@@ -173,7 +173,7 @@ func (rsc *ReplicaSetController) SetEventRecorder(recorder record.EventRecorder)
 }
 
 // Run begins watching and syncing.
-func (rsc *ReplicaSetController) Run(workers int, stopCh <-chan struct{}) {
+func (rsc *ReplicaSetController) Run(ctx context.Context, workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer rsc.queue.ShutDown()
 
