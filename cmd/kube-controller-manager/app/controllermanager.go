@@ -367,7 +367,7 @@ func (c ControllerContext) IsControllerEnabled(name string) bool {
 // InitFunc is used to launch a particular controller.  It may run additional "should I activate checks".
 // Any error returned will cause the controller process to `Fatal`
 // The bool indicates whether the controller was enabled.
-type InitFunc func(controllerCtx ControllerContext, ctx context.Context) (debuggingHandler http.Handler, enabled bool, err error)
+type InitFunc func(ctx context.Context, controllerCtx ControllerContext) (debuggingHandler http.Handler, enabled bool, err error)
 
 // ControllerInitializersFunc is used to create a collection of initializers
 //  given the loopMode.

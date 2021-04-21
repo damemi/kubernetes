@@ -182,7 +182,7 @@ type Controller struct {
 
 // Run will not return until stopCh is closed. workers determines how many
 // endpoints will be handled in parallel.
-func (e *Controller) Run(workers int, stopCh <-chan struct{}, ctx context.Context) {
+func (e *Controller) Run(ctx context.Context, workers int, stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	defer e.queue.ShutDown()
 
@@ -194,9 +194,7 @@ func (e *Controller) Run(workers int, stopCh <-chan struct{}, ctx context.Contex
 	}
 
 	for i := 0; i < workers; i++ {
-		go wait.Until(func() {
-			e.worker(ctx)
-		}, e.workerLoopPeriod, stopCh)
+		go wait.UntilWithContext(ctx, e.worker, e.workerLoopPeriod)
 	}
 
 	go func() {
@@ -349,7 +347,7 @@ func (e *Controller) processNextWorkItem(ctx context.Context) bool {
 	}
 	defer e.queue.Done(eKey)
 
-	err := e.syncService(eKey.(string), ctx)
+	err := e.syncService(ctx, eKey.(string))
 	e.handleErr(err, eKey)
 
 	return true
@@ -377,7 +375,7 @@ func (e *Controller) handleErr(err error, key interface{}) {
 	utilruntime.HandleError(err)
 }
 
-func (e *Controller) syncService(key string, ctx context.Context) error {
+func (e *Controller) syncService(ctx context.Context, key string) error {
 	startTime := time.Now()
 	defer func() {
 		klog.V(4).Infof("Finished syncing service %q endpoints. (%v)", key, time.Since(startTime))

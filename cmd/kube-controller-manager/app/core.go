@@ -409,53 +409,53 @@ func startEphemeralVolumeController(ctx ControllerContext) (http.Handler, bool, 
 	return nil, false, nil
 }
 
-func startEndpointController(controllerCtx ControllerContext, ctx context.Context) (http.Handler, bool, error) {
+func startEndpointController(ctx context.Context, controllerCtx ControllerContext) (http.Handler, bool, error) {
 	go endpointcontroller.NewEndpointController(
 		controllerCtx.InformerFactory.Core().V1().Pods(),
 		controllerCtx.InformerFactory.Core().V1().Services(),
 		controllerCtx.InformerFactory.Core().V1().Endpoints(),
 		controllerCtx.ClientBuilder.ClientOrDie("endpoint-controller"),
 		controllerCtx.ComponentConfig.EndpointController.EndpointUpdatesBatchPeriod.Duration,
-	).Run(int(controllerCtx.ComponentConfig.EndpointController.ConcurrentEndpointSyncs), controllerCtx.Stop, ctx)
+	).Run(ctx, int(controllerCtx.ComponentConfig.EndpointController.ConcurrentEndpointSyncs), controllerCtx.Stop)
 	return nil, true, nil
 }
 
-func startReplicationController(ctx ControllerContext) (http.Handler, bool, error) {
+func startReplicationController(ctx context.Context, controllerContext ControllerContext) (http.Handler, bool, error) {
 	go replicationcontroller.NewReplicationManager(
-		ctx.InformerFactory.Core().V1().Pods(),
-		ctx.InformerFactory.Core().V1().ReplicationControllers(),
-		ctx.ClientBuilder.ClientOrDie("replication-controller"),
+		controllerContext.InformerFactory.Core().V1().Pods(),
+		controllerContext.InformerFactory.Core().V1().ReplicationControllers(),
+		controllerContext.ClientBuilder.ClientOrDie("replication-controller"),
 		replicationcontroller.BurstReplicas,
-	).Run(int(ctx.ComponentConfig.ReplicationController.ConcurrentRCSyncs), ctx.Stop)
+	).Run(ctx, int(controllerContext.ComponentConfig.ReplicationController.ConcurrentRCSyncs), controllerContext.Stop)
 	return nil, true, nil
 }
 
-func startPodGCController(ctx ControllerContext) (http.Handler, bool, error) {
+func startPodGCController(ctx context.Context, controllerContext ControllerContext) (http.Handler, bool, error) {
 	go podgc.NewPodGC(
-		ctx.ClientBuilder.ClientOrDie("pod-garbage-collector"),
-		ctx.InformerFactory.Core().V1().Pods(),
-		ctx.InformerFactory.Core().V1().Nodes(),
-		int(ctx.ComponentConfig.PodGCController.TerminatedPodGCThreshold),
-	).Run(ctx.Stop)
+		controllerContext.ClientBuilder.ClientOrDie("pod-garbage-collector"),
+		controllerContext.InformerFactory.Core().V1().Pods(),
+		controllerContext.InformerFactory.Core().V1().Nodes(),
+		int(controllerContext.ComponentConfig.PodGCController.TerminatedPodGCThreshold),
+	).Run(ctx, controllerContext.Stop)
 	return nil, true, nil
 }
 
-func startResourceQuotaController(ctx ControllerContext) (http.Handler, bool, error) {
-	resourceQuotaControllerClient := ctx.ClientBuilder.ClientOrDie("resourcequota-controller")
-	resourceQuotaControllerDiscoveryClient := ctx.ClientBuilder.DiscoveryClientOrDie("resourcequota-controller")
+func startResourceQuotaController(ctx context.Context, controllerContext ControllerContext) (http.Handler, bool, error) {
+	resourceQuotaControllerClient := controllerContext.ClientBuilder.ClientOrDie("resourcequota-controller")
+	resourceQuotaControllerDiscoveryClient := controllerContext.ClientBuilder.DiscoveryClientOrDie("resourcequota-controller")
 	discoveryFunc := resourceQuotaControllerDiscoveryClient.ServerPreferredNamespacedResources
-	listerFuncForResource := generic.ListerFuncForResourceFunc(ctx.InformerFactory.ForResource)
+	listerFuncForResource := generic.ListerFuncForResourceFunc(controllerContext.InformerFactory.ForResource)
 	quotaConfiguration := quotainstall.NewQuotaConfigurationForControllers(listerFuncForResource)
 
 	resourceQuotaControllerOptions := &resourcequotacontroller.ControllerOptions{
 		QuotaClient:               resourceQuotaControllerClient.CoreV1(),
-		ResourceQuotaInformer:     ctx.InformerFactory.Core().V1().ResourceQuotas(),
-		ResyncPeriod:              controller.StaticResyncPeriodFunc(ctx.ComponentConfig.ResourceQuotaController.ResourceQuotaSyncPeriod.Duration),
-		InformerFactory:           ctx.ObjectOrMetadataInformerFactory,
-		ReplenishmentResyncPeriod: ctx.ResyncPeriod,
+		ResourceQuotaInformer:     controllerContext.InformerFactory.Core().V1().ResourceQuotas(),
+		ResyncPeriod:              controller.StaticResyncPeriodFunc(controllerContext.ComponentConfig.ResourceQuotaController.ResourceQuotaSyncPeriod.Duration),
+		InformerFactory:           controllerContext.ObjectOrMetadataInformerFactory,
+		ReplenishmentResyncPeriod: controllerContext.ResyncPeriod,
 		DiscoveryFunc:             discoveryFunc,
 		IgnoredResourcesFunc:      quotaConfiguration.IgnoredResources,
-		InformersStarted:          ctx.InformersStarted,
+		InformersStarted:          controllerContext.InformersStarted,
 		Registry:                  generic.NewRegistry(quotaConfiguration.Evaluators()),
 	}
 	if resourceQuotaControllerClient.CoreV1().RESTClient().GetRateLimiter() != nil {
@@ -468,23 +468,23 @@ func startResourceQuotaController(ctx ControllerContext) (http.Handler, bool, er
 	if err != nil {
 		return nil, false, err
 	}
-	go resourceQuotaController.Run(int(ctx.ComponentConfig.ResourceQuotaController.ConcurrentResourceQuotaSyncs), ctx.Stop)
+	go resourceQuotaController.Run(ctx, int(controllerContext.ComponentConfig.ResourceQuotaController.ConcurrentResourceQuotaSyncs), controllerContext.Stop)
 
 	// Periodically the quota controller to detect new resource types
-	go resourceQuotaController.Sync(discoveryFunc, 30*time.Second, ctx.Stop)
+	go resourceQuotaController.Sync(discoveryFunc, 30*time.Second, controllerContext.Stop)
 
 	return nil, true, nil
 }
 
-func startNamespaceController(ctx ControllerContext) (http.Handler, bool, error) {
+func startNamespaceController(ctx context.Context, controllerContext ControllerContext) (http.Handler, bool, error) {
 	// the namespace cleanup controller is very chatty.  It makes lots of discovery calls and then it makes lots of delete calls
 	// the ratelimiter negatively affects its speed.  Deleting 100 total items in a namespace (that's only a few of each resource
 	// including events), takes ~10 seconds by default.
-	nsKubeconfig := ctx.ClientBuilder.ConfigOrDie("namespace-controller")
+	nsKubeconfig := controllerContext.ClientBuilder.ConfigOrDie("namespace-controller")
 	nsKubeconfig.QPS *= 20
 	nsKubeconfig.Burst *= 100
 	namespaceKubeClient := clientset.NewForConfigOrDie(nsKubeconfig)
-	return startModifiedNamespaceController(ctx, namespaceKubeClient, nsKubeconfig)
+	return startModifiedNamespaceController(controllerContext, namespaceKubeClient, nsKubeconfig)
 }
 
 func startModifiedNamespaceController(ctx ControllerContext, namespaceKubeClient clientset.Interface, nsKubeconfig *restclient.Config) (http.Handler, bool, error) {
@@ -509,17 +509,17 @@ func startModifiedNamespaceController(ctx ControllerContext, namespaceKubeClient
 	return nil, true, nil
 }
 
-func startServiceAccountController(ctx ControllerContext) (http.Handler, bool, error) {
+func startServiceAccountController(ctx context.Context, controllerContext ControllerContext) (http.Handler, bool, error) {
 	sac, err := serviceaccountcontroller.NewServiceAccountsController(
-		ctx.InformerFactory.Core().V1().ServiceAccounts(),
-		ctx.InformerFactory.Core().V1().Namespaces(),
-		ctx.ClientBuilder.ClientOrDie("service-account-controller"),
+		controllerContext.InformerFactory.Core().V1().ServiceAccounts(),
+		controllerContext.InformerFactory.Core().V1().Namespaces(),
+		controllerContext.ClientBuilder.ClientOrDie("service-account-controller"),
 		serviceaccountcontroller.DefaultServiceAccountsControllerOptions(),
 	)
 	if err != nil {
 		return nil, true, fmt.Errorf("error creating ServiceAccount controller: %v", err)
 	}
-	go sac.Run(1, ctx.Stop)
+	go sac.Run(ctx, 1, controllerContext.Stop)
 	return nil, true, nil
 }
 
@@ -531,43 +531,43 @@ func startTTLController(ctx ControllerContext) (http.Handler, bool, error) {
 	return nil, true, nil
 }
 
-func startGarbageCollectorController(ctx ControllerContext) (http.Handler, bool, error) {
-	if !ctx.ComponentConfig.GarbageCollectorController.EnableGarbageCollector {
+func startGarbageCollectorController(ctx context.Context, controllerContext ControllerContext) (http.Handler, bool, error) {
+	if !controllerContext.ComponentConfig.GarbageCollectorController.EnableGarbageCollector {
 		return nil, false, nil
 	}
 
-	gcClientset := ctx.ClientBuilder.ClientOrDie("generic-garbage-collector")
-	discoveryClient := ctx.ClientBuilder.DiscoveryClientOrDie("generic-garbage-collector")
+	gcClientset := controllerContext.ClientBuilder.ClientOrDie("generic-garbage-collector")
+	discoveryClient := controllerContext.ClientBuilder.DiscoveryClientOrDie("generic-garbage-collector")
 
-	config := ctx.ClientBuilder.ConfigOrDie("generic-garbage-collector")
+	config := controllerContext.ClientBuilder.ConfigOrDie("generic-garbage-collector")
 	metadataClient, err := metadata.NewForConfig(config)
 	if err != nil {
 		return nil, true, err
 	}
 
 	ignoredResources := make(map[schema.GroupResource]struct{})
-	for _, r := range ctx.ComponentConfig.GarbageCollectorController.GCIgnoredResources {
+	for _, r := range controllerContext.ComponentConfig.GarbageCollectorController.GCIgnoredResources {
 		ignoredResources[schema.GroupResource{Group: r.Group, Resource: r.Resource}] = struct{}{}
 	}
 	garbageCollector, err := garbagecollector.NewGarbageCollector(
 		gcClientset,
 		metadataClient,
-		ctx.RESTMapper,
+		controllerContext.RESTMapper,
 		ignoredResources,
-		ctx.ObjectOrMetadataInformerFactory,
-		ctx.InformersStarted,
+		controllerContext.ObjectOrMetadataInformerFactory,
+		controllerContext.InformersStarted,
 	)
 	if err != nil {
 		return nil, true, fmt.Errorf("failed to start the generic garbage collector: %v", err)
 	}
 
 	// Start the garbage collector.
-	workers := int(ctx.ComponentConfig.GarbageCollectorController.ConcurrentGCSyncs)
-	go garbageCollector.Run(workers, ctx.Stop)
+	workers := int(controllerContext.ComponentConfig.GarbageCollectorController.ConcurrentGCSyncs)
+	go garbageCollector.Run(workers, controllerContext.Stop)
 
 	// Periodically refresh the RESTMapper with new discovery information and sync
 	// the garbage collector.
-	go garbageCollector.Sync(discoveryClient, 30*time.Second, ctx.Stop)
+	go garbageCollector.Sync(discoveryClient, 30*time.Second, controllerContext.Stop)
 
 	return garbagecollector.NewDebugHandler(garbageCollector), true, nil
 }
