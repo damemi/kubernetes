@@ -219,7 +219,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 			klog.Fatalf("error building controller context: %v", err)
 		}
 		controllerInitializers := initializersFunc(controllerContext.LoopMode)
-		if err := StartControllers(controllerContext, startSATokenController, controllerInitializers, unsecuredMux, ctx); err != nil {
+		if err := StartControllers(ctx, controllerContext, startSATokenController, controllerInitializers, unsecuredMux); err != nil {
 			klog.Fatalf("error starting controllers: %v", err)
 		}
 
@@ -259,9 +259,9 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 		// Wrap saTokenControllerInitFunc to signal readiness for migration after starting
 		//  the controller.
-		startSATokenController = func(ctx ControllerContext) (http.Handler, bool, error) {
+		startSATokenController = func(ctx context.Context, controllerContext ControllerContext) (http.Handler, bool, error) {
 			defer close(leaderMigrator.MigrationReady)
-			return saTokenControllerInitFunc(ctx)
+			return saTokenControllerInitFunc(ctx, controllerContext)
 		}
 	}
 
@@ -584,25 +584,25 @@ type serviceAccountTokenControllerStarter struct {
 	rootClientBuilder clientbuilder.ControllerClientBuilder
 }
 
-func (c serviceAccountTokenControllerStarter) startServiceAccountTokenController(ctx ControllerContext) (http.Handler, bool, error) {
-	if !ctx.IsControllerEnabled(saTokenControllerName) {
+func (c serviceAccountTokenControllerStarter) startServiceAccountTokenController(ctx context.Context, controllerContext ControllerContext) (http.Handler, bool, error) {
+	if !controllerContext.IsControllerEnabled(saTokenControllerName) {
 		klog.Warningf("%q is disabled", saTokenControllerName)
 		return nil, false, nil
 	}
 
-	if len(ctx.ComponentConfig.SAController.ServiceAccountKeyFile) == 0 {
+	if len(controllerContext.ComponentConfig.SAController.ServiceAccountKeyFile) == 0 {
 		klog.Warningf("%q is disabled because there is no private key", saTokenControllerName)
 		return nil, false, nil
 	}
-	privateKey, err := keyutil.PrivateKeyFromFile(ctx.ComponentConfig.SAController.ServiceAccountKeyFile)
+	privateKey, err := keyutil.PrivateKeyFromFile(controllerContext.ComponentConfig.SAController.ServiceAccountKeyFile)
 	if err != nil {
 		return nil, true, fmt.Errorf("error reading key for service account token controller: %v", err)
 	}
 
 	var rootCA []byte
-	if ctx.ComponentConfig.SAController.RootCAFile != "" {
-		if rootCA, err = readCA(ctx.ComponentConfig.SAController.RootCAFile); err != nil {
-			return nil, true, fmt.Errorf("error parsing root-ca-file at %s: %v", ctx.ComponentConfig.SAController.RootCAFile, err)
+	if controllerContext.ComponentConfig.SAController.RootCAFile != "" {
+		if rootCA, err = readCA(controllerContext.ComponentConfig.SAController.RootCAFile); err != nil {
+			return nil, true, fmt.Errorf("error parsing root-ca-file at %s: %v", controllerContext.ComponentConfig.SAController.RootCAFile, err)
 		}
 	} else {
 		rootCA = c.rootClientBuilder.ConfigOrDie("tokens-controller").CAData
@@ -613,8 +613,8 @@ func (c serviceAccountTokenControllerStarter) startServiceAccountTokenController
 		return nil, false, fmt.Errorf("failed to build token generator: %v", err)
 	}
 	controller, err := serviceaccountcontroller.NewTokensController(
-		ctx.InformerFactory.Core().V1().ServiceAccounts(),
-		ctx.InformerFactory.Core().V1().Secrets(),
+		controllerContext.InformerFactory.Core().V1().ServiceAccounts(),
+		controllerContext.InformerFactory.Core().V1().Secrets(),
 		c.rootClientBuilder.ClientOrDie("tokens-controller"),
 		serviceaccountcontroller.TokensControllerOptions{
 			TokenGenerator: tokenGenerator,
@@ -624,10 +624,10 @@ func (c serviceAccountTokenControllerStarter) startServiceAccountTokenController
 	if err != nil {
 		return nil, true, fmt.Errorf("error creating Tokens controller: %v", err)
 	}
-	go controller.Run(int(ctx.ComponentConfig.SAController.ConcurrentSATokenSyncs), ctx.Stop)
+	go controller.Run(int(controllerContext.ComponentConfig.SAController.ConcurrentSATokenSyncs), controllerContext.Stop)
 
 	// start the first set of informers now so that other controllers can start
-	ctx.InformerFactory.Start(ctx.Stop)
+	controllerContext.InformerFactory.Start(controllerContext.Stop)
 
 	return nil, true, nil
 }
